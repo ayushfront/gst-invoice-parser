@@ -1,10 +1,12 @@
 import logging
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi.staticfiles import StaticFiles
 from typing import List
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 load_dotenv()
 
@@ -20,6 +22,9 @@ app = FastAPI(
     description="Extract structured data from Indian GST invoices using AI.",
     version="1.0.0",
 )
+
+_STATIC_DIR = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 VERSION = "1.0.0"
 
@@ -47,7 +52,7 @@ def _check_internal(secret: str | None) -> None:
 
 @app.get("/", include_in_schema=False)
 async def root():
-    return RedirectResponse(url="/docs")
+    return FileResponse(str(_STATIC_DIR / "index.html"))
 
 
 @app.get("/health")

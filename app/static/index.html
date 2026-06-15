@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GST Invoice Parser — AI-Powered Extraction API</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --primary:      #0f172a;
+            --primary-soft: #1e293b;
+            --accent:       #f59e0b;
+            --accent-dark:  #d97706;
+            --accent-light: #fef3c7;
+            --bg:           #ffffff;
+            --bg-subtle:    #f8fafc;
+            --border:       #e2e8f0;
+            --text:         #0f172a;
+            --muted:        #64748b;
+            --green:        #10b981;
+            --blue:         #3b82f6;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+        }
+
+        /* ── NAV ───────────────────────────────────────────── */
+        nav {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+            background: rgba(15, 23, 42, 0.96);
+            backdrop-filter: blur(14px);
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            height: 64px;
+            display: flex; align-items: center;
+            padding: 0 2rem;
+            gap: 1rem;
+        }
+
+        .nav-logo {
+            display: flex; align-items: center; gap: 10px;
+            text-decoration: none; flex-shrink: 0;
+        }
+
+        .logo-icon {
+            width: 34px; height: 34px;
+            background: var(--accent);
+            border-radius: 9px;
+            display: flex; align-items: center; justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .logo-icon svg { width: 20px; height: 20px; }
+
+        .logo-text {
+            font-size: 0.9375rem; font-weight: 700;
+            color: #fff; letter-spacing: -0.01em;
+        }
+
+        .logo-text em { color: var(--accent); font-style: normal; }
+
+        .nav-spacer { flex: 1; }
+
+        .nav-links {
+            display: flex; align-items: center; gap: 4px;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: rgba(255,255,255,0.65);
+            text-decoration: none;
+            font-size: 0.875rem; font-weight: 500;
+            padding: 6px 12px; border-radius: 6px;
+            transition: all 0.15s;
+            display: flex; align-items: center; gap: 6px;
+        }
+
+        .nav-links a:hover { color: #fff; background: rgba(255,255,255,0.08); }
+
+        .nav-btn {
+            background: var(--accent) !important;
+            color: #000 !important;
+            font-weight: 700 !important;
+            padding: 6px 16px !important;
+        }
+
+        .nav-btn:hover {
+            background: var(--accent-dark) !important;
+            transform: translateY(-1px);
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 7px; height: 7px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: blink 2.4s ease-in-out infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0.35; }
+        }
+
+        /* ── HERO ──────────────────────────────────────────── */
+        .hero {
+            min-height: 100vh;
+            background: linear-gradient(155deg, #0a0f1e 0%, #0f172a 45%, #1a1035 100%);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            text-align: center;
+            padding: 120px 2rem 80px;
+            position: relative; overflow: hidden;
+        }
+
+        .hero-glow {
+            position: absolute; top: 10%; left: 50%;
+            transform: translateX(-50%);
+            width: 900px; height: 600px;
+            background: radial-gradient(ellipse, rgba(245,158,11,0.13) 0%, transparent 68%);
+            pointer-events: none;
+        }
+
+        .hero-grid {
+            position: absolute; inset: 0;
+            background-image:
+                linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 60px 60px;
+            pointer-events: none;
+        }
+
+        .hero-badge {
+            display: inline-flex; align-items: center; gap: 7px;
+            background: rgba(245,158,11,0.12);
+            border: 1px solid rgba(245,158,11,0.28);
+            border-radius: 100px;
+            padding: 5px 16px;
+            font-size: 0.75rem; font-weight: 600;
+            color: var(--accent);
+            letter-spacing: 0.04em; text-transform: uppercase;
+            margin-bottom: 1.75rem;
+            position: relative;
+        }
+
+        .hero h1 {
+            font-size: clamp(2.4rem, 6vw, 4.25rem);
+            font-weight: 900;
+            color: #fff;
+            line-height: 1.1;
+            letter-spacing: -0.04em;
+            max-width: 820px;
+            margin: 0 auto 1.25rem;
+            position: relative;
+        }
+
+        .hero h1 .gradient {
+            background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 50%, #fcd34d 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero-sub {
+            font-size: 1.125rem;
+            color: rgba(255,255,255,0.55);
+            max-width: 540px; margin: 0 auto 2.75rem;
+            line-height: 1.75; position: relative;
+        }
+
+        .hero-cta {
+            display: flex; gap: 1rem; justify-content: center;
+            flex-wrap: wrap; position: relative; margin-bottom: 4rem;
+        }
+
+        .btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 13px 26px; border-radius: 9px;
+            font-size: 0.9375rem; font-weight: 600;
+            text-decoration: none; border: none; cursor: pointer;
+            transition: all 0.18s; line-height: 1;
+        }
+
+        .btn-primary {
+            background: var(--accent); color: #000;
+            box-shadow: 0 0 0 0 rgba(245,158,11,0);
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-dark);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(245,158,11,0.4);
+        }
+
+        .btn-outline {
+            background: rgba(255,255,255,0.06);
+            color: rgba(255,255,255,0.85);
+            border: 1px solid rgba(255,255,255,0.13);
+        }
+
+        .btn-outline:hover {
+            background: rgba(255,255,255,0.12);
+            color: #fff;
+        }
+
+        /* mini code preview in hero */
+        .hero-preview {
+            position: relative;
+            background: rgba(15,23,42,0.8);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 14px;
+            padding: 0;
+            max-width: 680px;
+            width: 100%;
+            text-align: left;
+            overflow: hidden;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+        }
+
+        .preview-bar {
+            background: rgba(255,255,255,0.04);
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            padding: 12px 16px;
+            display: flex; align-items: center; gap: 8px;
+        }
+
+        .preview-dot {
+            width: 11px; height: 11px; border-radius: 50%;
+        }
+
+        .preview-bar-title {
+            flex: 1; text-align: center;
+            font-size: 0.75rem; color: rgba(255,255,255,0.3);
+            font-family: monospace;
+        }
+
+        .preview-body {
+            padding: 1.25rem 1.5rem;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.8125rem; line-height: 1.8;
+            color: #94a3b8;
+        }
+
+        .t-green  { color: #86efac; }
+        .t-amber  { color: #fcd34d; }
+        .t-blue   { color: #93c5fd; }
+        .t-purple { color: #c4b5fd; }
+        .t-gray   { color: #475569; }
+        .t-white  { color: #f1f5f9; }
+
+        /* ── STATS BAR ─────────────────────────────────────── */
+        .stats-bar {
+            background: var(--bg-subtle);
+            border-bottom: 1px solid var(--border);
+            padding: 2.25rem 2rem;
+        }
+
+        .stats-inner {
+            max-width: 960px; margin: 0 auto;
+            display: grid; grid-template-columns: repeat(4,1fr);
+            gap: 2rem; text-align: center;
+        }
+
+        .stat-num {
+            font-size: 2.1rem; font-weight: 900;
+            color: var(--text); letter-spacing: -0.04em;
+        }
+
+        .stat-lbl {
+            font-size: 0.8rem; font-weight: 500;
+            color: var(--muted); margin-top: 3px;
+        }
+
+        /* ── SECTION SHELL ────────────────────────────────── */
+        .section { max-width: 1100px; margin: 0 auto; padding: 5.5rem 2rem; }
+
+        .section-label {
+            font-size: 0.7rem; font-weight: 800;
+            letter-spacing: 0.12em; text-transform: uppercase;
+            color: var(--accent); margin-bottom: 0.6rem;
+        }
+
+        .section-title {
+            font-size: clamp(1.75rem, 4vw, 2.5rem);
+            font-weight: 800; letter-spacing: -0.03em; color: var(--text);
+        }
+
+        .section-sub {
+            font-size: 1rem; color: var(--muted);
+            margin-top: 0.65rem; max-width: 500px;
+        }
+
+        .section-header { margin-bottom: 3rem; }
+        .section-header.center { text-align: center; }
+        .section-header.center .section-sub { margin-left: auto; margin-right: auto; }
+
+        /* ── FEATURES ─────────────────────────────────────── */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(3,1fr);
+            gap: 1.25rem;
+        }
+
+        .feat-card {
+            background: var(--bg-subtle);
+            border: 1px solid var(--border);
+            border-radius: 14px; padding: 1.75rem;
+            transition: all 0.2s;
+        }
+
+        .feat-card:hover {
+            border-color: var(--accent);
+            box-shadow: 0 6px 30px rgba(245,158,11,0.1);
+            transform: translateY(-3px);
+        }
+
+        .feat-icon {
+            font-size: 1.5rem; margin-bottom: 1rem;
+            width: 48px; height: 48px;
+            background: var(--accent-light);
+            border-radius: 11px;
+            display: flex; align-items: center; justify-content: center;
+        }
+
+        .feat-title { font-size: 0.9375rem; font-weight: 700; margin-bottom: 0.4rem; }
+        .feat-desc  { font-size: 0.85rem; color: var(--muted); line-height: 1.65; }
+
+        /* ── ENDPOINTS ────────────────────────────────────── */
+        .endpoints-wrap {
+            background: var(--bg-subtle);
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .two-col {
+            display: grid; grid-template-columns: 1fr 1fr;
+            gap: 3rem; align-items: start;
+        }
+
+        .ep-table { width: 100%; border-collapse: collapse; }
+
+        .ep-table thead tr { border-bottom: 2px solid var(--border); }
+
+        .ep-table th {
+            text-align: left; padding: 0.6rem 0.875rem;
+            font-size: 0.7rem; font-weight: 700;
+            letter-spacing: 0.07em; text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .ep-table td {
+            padding: 0.875rem; border-bottom: 1px solid var(--border);
+            font-size: 0.875rem; vertical-align: middle;
+        }
+
+        .ep-table tr:last-child td { border-bottom: none; }
+
+        .ep-table tr:hover td { background: rgba(245,158,11,0.03); }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 8px; border-radius: 5px;
+            font-size: 0.65rem; font-weight: 800;
+            letter-spacing: 0.06em;
+        }
+
+        .badge-post { background: #dbeafe; color: #1d4ed8; }
+        .badge-get  { background: #d1fae5; color: #065f46; }
+
+        .mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.8125rem; font-weight: 600; }
+        .muted { color: var(--muted); }
+
+        /* code block */
+        .code-box {
+            background: #0f172a;
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 13px; overflow: hidden;
+        }
+
+        .code-box-header {
+            background: rgba(255,255,255,0.04);
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            padding: 11px 16px;
+            display: flex; align-items: center; gap: 8px;
+        }
+
+        .code-box-title {
+            font-size: 0.72rem; color: rgba(255,255,255,0.3);
+            font-family: monospace; margin-left: 4px;
+        }
+
+        .code-box pre {
+            padding: 1.375rem 1.5rem;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 0.8rem; line-height: 1.85;
+            color: #94a3b8; overflow-x: auto;
+        }
+
+        /* ── HOW IT WORKS ─────────────────────────────────── */
+        .steps {
+            display: grid; grid-template-columns: repeat(3,1fr);
+            gap: 2rem; counter-reset: steps;
+        }
+
+        .step {
+            position: relative;
+            padding: 2rem;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: var(--bg);
+        }
+
+        .step-num {
+            font-size: 3rem; font-weight: 900;
+            color: var(--accent-light);
+            letter-spacing: -0.06em;
+            line-height: 1;
+            margin-bottom: 1rem;
+        }
+
+        .step-title { font-size: 1rem; font-weight: 700; margin-bottom: 0.4rem; }
+        .step-desc  { font-size: 0.85rem; color: var(--muted); line-height: 1.65; }
+
+        /* ── FOOTER ───────────────────────────────────────── */
+        footer {
+            background: var(--primary);
+            color: rgba(255,255,255,0.35);
+            padding: 2rem;
+            text-align: center;
+            font-size: 0.8125rem;
+        }
+
+        footer a {
+            color: rgba(255,255,255,0.55);
+            text-decoration: none; margin: 0 0.5rem;
+        }
+
+        footer a:hover { color: #fff; }
+
+        /* ── RESPONSIVE ───────────────────────────────────── */
+        @media (max-width: 860px) {
+            .stats-inner   { grid-template-columns: repeat(2,1fr); }
+            .features-grid { grid-template-columns: 1fr 1fr; }
+            .two-col       { grid-template-columns: 1fr; }
+            .steps         { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 600px) {
+            .features-grid { grid-template-columns: 1fr; }
+            .nav-links li:not(:last-child) { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ═══ NAV ═══════════════════════════════════════════════════ -->
+<nav>
+    <a href="/" class="nav-logo">
+        <div class="logo-icon">
+            <svg viewBox="0 0 20 20" fill="none">
+                <path d="M4 3h8l4 4v11H4V3z" stroke="#000" stroke-width="1.5" stroke-linejoin="round"/>
+                <path d="M12 3v4h4" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M7 11h6M7 14h4" stroke="#000" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+        </div>
+        <span class="logo-text">GST <em>Invoice</em> Parser</span>
+    </a>
+    <div class="nav-spacer"></div>
+    <ul class="nav-links">
+        <li>
+            <a href="/health">
+                <span class="status-dot"></span> Live
+            </a>
+        </li>
+        <li><a href="/docs">API Docs</a></li>
+        <li><a href="https://github.com/ayushfront/gst-invoice-parser" target="_blank">GitHub</a></li>
+        <li><a href="/docs" class="nav-btn">Try API →</a></li>
+    </ul>
+</nav>
+
+<!-- ═══ HERO ═══════════════════════════════════════════════════ -->
+<section class="hero">
+    <div class="hero-glow"></div>
+    <div class="hero-grid"></div>
+
+    <div class="hero-badge">⚡ Powered by Google Gemini AI</div>
+
+    <h1>
+        Parse GST Invoices<br>
+        <span class="gradient">Instantly with AI</span>
+    </h1>
+
+    <p class="hero-sub">
+        Upload any Indian GST invoice — PDF or image — and receive fully structured
+        JSON with seller, buyer, GSTIN, line items, and complete tax breakdown.
+    </p>
+
+    <div class="hero-cta">
+        <a href="/docs" class="btn btn-primary">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polygon points="5 3 19 12 5 21 5 3"/>
+            </svg>
+            Try the API
+        </a>
+        <a href="https://github.com/ayushfront/gst-invoice-parser" target="_blank" class="btn btn-outline">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+            </svg>
+            View on GitHub
+        </a>
+    </div>
+
+    <!-- live JSON preview -->
+    <div class="hero-preview">
+        <div class="preview-bar">
+            <div class="preview-dot" style="background:#ff5f57"></div>
+            <div class="preview-dot" style="background:#febc2e"></div>
+            <div class="preview-dot" style="background:#28c840"></div>
+            <span class="preview-bar-title">POST /parse → 200 OK</span>
+        </div>
+        <div class="preview-body">
+<span class="t-gray">{</span>
+  <span class="t-blue">"success"</span><span class="t-gray">:</span> <span class="t-amber">true</span><span class="t-gray">,</span>
+  <span class="t-blue">"data"</span><span class="t-gray">: {</span>
+    <span class="t-blue">"invoice_number"</span><span class="t-gray">:</span> <span class="t-green">"INV-2024-0087"</span><span class="t-gray">,</span>
+    <span class="t-blue">"invoice_date"</span><span class="t-gray">:</span>   <span class="t-green">"2024-11-14"</span><span class="t-gray">,</span>
+    <span class="t-blue">"seller"</span><span class="t-gray">: {</span> <span class="t-blue">"name"</span><span class="t-gray">:</span> <span class="t-green">"TechNova Solutions Pvt Ltd"</span><span class="t-gray">,</span>
+                   <span class="t-blue">"gstin"</span><span class="t-gray">:</span> <span class="t-green">"27ABCDE1234F1Z5"</span> <span class="t-gray">},</span>
+    <span class="t-blue">"tax_summary"</span><span class="t-gray">: {</span> <span class="t-blue">"grand_total"</span><span class="t-gray">:</span> <span class="t-purple">118000</span><span class="t-gray">,</span>
+                       <span class="t-blue">"total_igst"</span><span class="t-gray">:</span>  <span class="t-purple">18000</span> <span class="t-gray">},</span>
+    <span class="t-blue">"meta"</span><span class="t-gray">: {</span> <span class="t-blue">"confidence_score"</span><span class="t-gray">:</span> <span class="t-purple">0.95</span><span class="t-gray">,</span>
+               <span class="t-blue">"pages_processed"</span><span class="t-gray">:</span>  <span class="t-purple">1</span> <span class="t-gray">}</span>
+  <span class="t-gray">}</span>
+<span class="t-gray">}</span>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ STATS BAR ════════════════════════════════════════════════ -->
+<div class="stats-bar">
+    <div class="stats-inner">
+        <div>
+            <div class="stat-num">3</div>
+            <div class="stat-lbl">Supported formats (PDF, JPG, PNG)</div>
+        </div>
+        <div>
+            <div class="stat-num">30+</div>
+            <div class="stat-lbl">Fields extracted per invoice</div>
+        </div>
+        <div>
+            <div class="stat-num">2</div>
+            <div class="stat-lbl">Languages (English &amp; Hindi)</div>
+        </div>
+        <div>
+            <div class="stat-num">Bulk</div>
+            <div class="stat-lbl">Multi-file batch API support</div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══ HOW IT WORKS ════════════════════════════════════════════ -->
+<section class="section">
+    <div class="section-header center">
+        <div class="section-label">How it works</div>
+        <h2 class="section-title">Three steps to structured data</h2>
+        <p class="section-sub">No setup required. Send a file, get structured JSON back.</p>
+    </div>
+    <div class="steps">
+        <div class="step">
+            <div class="step-num">01</div>
+            <div class="step-title">Upload your invoice</div>
+            <div class="step-desc">Send a multipart POST request with your PDF or image file to <code style="background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:0.8em">/parse</code>. No registration needed for local use.</div>
+        </div>
+        <div class="step">
+            <div class="step-num">02</div>
+            <div class="step-title">AI extraction</div>
+            <div class="step-desc">Google Gemini reads the invoice text (with OCR fallback for scanned files) and extracts every GST-relevant field.</div>
+        </div>
+        <div class="step">
+            <div class="step-num">03</div>
+            <div class="step-title">Receive JSON</div>
+            <div class="step-desc">Get a clean, typed JSON object — seller, buyer, GSTIN, every line item, CGST/SGST/IGST breakdown, and a confidence score.</div>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ FEATURES ═════════════════════════════════════════════════ -->
+<section class="section" style="padding-top:0">
+    <div class="section-header center">
+        <div class="section-label">Features</div>
+        <h2 class="section-title">Built for production</h2>
+        <p class="section-sub">Everything a developer needs to integrate GST invoice parsing reliably.</p>
+    </div>
+    <div class="features-grid">
+        <div class="feat-card">
+            <div class="feat-icon">📄</div>
+            <div class="feat-title">PDF &amp; Image Support</div>
+            <div class="feat-desc">Native PDFs, scanned documents, and invoice photos all work. pytesseract OCR kicks in automatically when the PDF has no text layer.</div>
+        </div>
+        <div class="feat-card">
+            <div class="feat-icon">🧾</div>
+            <div class="feat-title">Complete GST Structure</div>
+            <div class="feat-desc">Seller, buyer, GSTIN, invoice date, all line items with HSN/SAC codes, CGST/SGST/IGST per line, and a full tax summary.</div>
+        </div>
+        <div class="feat-card">
+            <div class="feat-icon">⚡</div>
+            <div class="feat-title">Batch Processing</div>
+            <div class="feat-desc">Submit multiple PDFs in one request via <code style="font-size:0.8em;background:#f1f5f9;padding:1px 5px;border-radius:3px">/parse/bulk</code>. Each file gets its own result; one failure never blocks the rest.</div>
+        </div>
+        <div class="feat-card">
+            <div class="feat-icon">🇮🇳</div>
+            <div class="feat-title">Hindi Language Support</div>
+            <div class="feat-desc">Pass <code style="font-size:0.8em;background:#f1f5f9;padding:1px 5px;border-radius:3px">language=hi</code> to parse Hindi or bilingual invoices. All output is returned in English JSON.</div>
+        </div>
+        <div class="feat-card">
+            <div class="feat-icon">🔒</div>
+            <div class="feat-title">Secure &amp; Stateless</div>
+            <div class="feat-desc">Files are never written to disk. All processing is in-memory only. No invoice data is retained after the response is sent.</div>
+        </div>
+        <div class="feat-card">
+            <div class="feat-icon">📊</div>
+            <div class="feat-title">Confidence Scoring</div>
+            <div class="feat-desc">Every response includes a <code style="font-size:0.8em;background:#f1f5f9;padding:1px 5px;border-radius:3px">confidence_score</code> from 0 to 1. Below 0.7 signals a low-quality extraction that needs human review.</div>
+        </div>
+    </div>
+</section>
+
+<!-- ═══ ENDPOINTS ════════════════════════════════════════════════ -->
+<div class="endpoints-wrap">
+    <section class="section">
+        <div class="section-header">
+            <div class="section-label">API Reference</div>
+            <h2 class="section-title">Clean, predictable endpoints</h2>
+            <p class="section-sub">Full interactive docs at <a href="/docs" style="color:var(--accent);text-decoration:none">/docs</a> — no auth needed for local use.</p>
+        </div>
+        <div class="two-col">
+            <table class="ep-table">
+                <thead>
+                    <tr>
+                        <th>Method</th>
+                        <th>Endpoint</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="badge badge-post">POST</span></td>
+                        <td class="mono">/parse</td>
+                        <td class="muted">Parse a single GST invoice</td>
+                    </tr>
+                    <tr>
+                        <td><span class="badge badge-post">POST</span></td>
+                        <td class="mono">/parse/bulk</td>
+                        <td class="muted">Parse multiple invoices at once</td>
+                    </tr>
+                    <tr>
+                        <td><span class="badge badge-get">GET</span></td>
+                        <td class="mono">/health</td>
+                        <td class="muted">Liveness check &amp; version</td>
+                    </tr>
+                    <tr>
+                        <td><span class="badge badge-get">GET</span></td>
+                        <td class="mono">/dashboard</td>
+                        <td class="muted">Usage &amp; cost analytics</td>
+                    </tr>
+                    <tr>
+                        <td><span class="badge badge-get">GET</span></td>
+                        <td class="mono">/docs</td>
+                        <td class="muted">Interactive Swagger UI</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div>
+                <div class="code-box">
+                    <div class="code-box-header">
+                        <div class="preview-dot" style="background:#ff5f57"></div>
+                        <div class="preview-dot" style="background:#febc2e"></div>
+                        <div class="preview-dot" style="background:#28c840"></div>
+                        <span class="code-box-title">curl example</span>
+                    </div>
+                    <pre><span class="t-gray"># Single invoice</span>
+curl -X POST https://your-api/parse \
+  -F <span class="t-green">"file=@invoice.pdf"</span> \
+  -F <span class="t-green">"language=en"</span>
+
+<span class="t-gray"># Bulk — multiple files</span>
+curl -X POST https://your-api/parse/bulk \
+  -F <span class="t-green">"files=@inv1.pdf"</span> \
+  -F <span class="t-green">"files=@inv2.pdf"</span> \
+  -F <span class="t-green">"language=en"</span></pre>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+
+<!-- ═══ FOOTER ═══════════════════════════════════════════════════ -->
+<footer>
+    <p>
+        GST Invoice Parser API &nbsp;·&nbsp;
+        Built with FastAPI &amp; Google Gemini &nbsp;·&nbsp;
+        <a href="/docs">API Docs</a>
+        <a href="/health">Status</a>
+        <a href="https://github.com/ayushfront/gst-invoice-parser" target="_blank">GitHub</a>
+    </p>
+</footer>
+
+</body>
+</html>
