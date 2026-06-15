@@ -142,7 +142,7 @@ def call_claude(extracted_text: str, language: str = "en") -> tuple[dict, int, i
         raise RuntimeError("INTERNAL_ERROR|GEMINI_API_KEY not configured|")
 
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-3.5-flash")
+    model = genai.GenerativeModel("nano-banana-pro-preview")
     prompt = _build_prompt(extracted_text, language)
 
     def _do_call():
