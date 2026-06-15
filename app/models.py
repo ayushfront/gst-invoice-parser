@@ -62,19 +62,3 @@ class InvoiceData(BaseModel):
     tax_summary: Optional[TaxSummary] = None
     payment: Optional[Payment] = None
     meta: Optional[Meta] = None
-
-
-class SuccessResponse(BaseModel):
-    success: bool = True
-    data: InvoiceData
-
-
-class ErrorDetail(BaseModel):
-    code: str
-    message: str
-    detail: str = ""
-
-
-class ErrorResponse(BaseModel):
-    success: bool = False
-    error: ErrorDetail

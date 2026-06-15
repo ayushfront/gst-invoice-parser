@@ -1,7 +1,3 @@
-"""
-AI extraction client — uses Google Gemini internally.
-Filename kept as claude_client.py for project consistency.
-"""
 import json
 import logging
 import os
@@ -12,10 +8,6 @@ import google.generativeai as genai
 from google.api_core import exceptions as google_exceptions
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Prompts
-# ---------------------------------------------------------------------------
 
 SYSTEM_PROMPT = """You are an expert Indian GST invoice data extraction engine.
 
@@ -56,27 +48,27 @@ JSON_SCHEMA_STRING = """{
     {
       "description": "string or null",
       "hsn_sac_code": "string or null",
-      "quantity": "number or null",
+      "quantity": number_or_null,
       "unit": "string or null",
-      "unit_price": "number or null",
-      "taxable_amount": "number or null",
-      "cgst_rate": "number or null",
-      "sgst_rate": "number or null",
-      "igst_rate": "number or null",
-      "cgst_amount": "number or null",
-      "sgst_amount": "number or null",
-      "igst_amount": "number or null",
-      "total_amount": "number or null"
+      "unit_price": number_or_null,
+      "taxable_amount": number_or_null,
+      "cgst_rate": number_or_null,
+      "sgst_rate": number_or_null,
+      "igst_rate": number_or_null,
+      "cgst_amount": number_or_null,
+      "sgst_amount": number_or_null,
+      "igst_amount": number_or_null,
+      "total_amount": number_or_null
     }
   ],
   "tax_summary": {
-    "subtotal": "number or null",
-    "total_cgst": "number or null",
-    "total_sgst": "number or null",
-    "total_igst": "number or null",
-    "total_cess": "number or null",
-    "round_off": "number or null",
-    "grand_total": "number or null",
+    "subtotal": number_or_null,
+    "total_cgst": number_or_null,
+    "total_sgst": number_or_null,
+    "total_igst": number_or_null,
+    "total_cess": number_or_null,
+    "round_off": number_or_null,
+    "grand_total": number_or_null,
     "amount_in_words": "string or null"
   },
   "payment": {
@@ -86,16 +78,14 @@ JSON_SCHEMA_STRING = """{
     "due_date": "YYYY-MM-DD or null"
   },
   "meta": {
-    "confidence_score": "float 0.0-1.0",
+    "confidence_score": 0.0_to_1.0,
     "extraction_time_ms": null,
     "pages_processed": null,
     "currency": "INR"
   }
 }"""
 
-USER_PROMPT_TEMPLATE = """{system}
-
-Extract all GST invoice data from the following invoice text and return as JSON matching this exact structure:
+USER_PROMPT_TEMPLATE = """Extract all GST invoice data from the following invoice text and return as JSON matching this exact structure:
 
 {json_schema}
 
@@ -107,48 +97,58 @@ Invoice text:
 Return only the JSON object. Nothing else."""
 
 MAX_TEXT_CHARS = int(os.getenv("MAX_TEXT_CHARS", "12000"))
+DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
 
 
-def _build_prompt(extracted_text: str, language: str) -> str:
-    system = SYSTEM_PROMPT
+def _build_system_prompt(language: str) -> str:
+    prompt = SYSTEM_PROMPT
     if language == "hi":
-        system += SYSTEM_PROMPT_HINDI_ADDON
-    return USER_PROMPT_TEMPLATE.format(
-        system=system,
-        json_schema=JSON_SCHEMA_STRING,
-        extracted_text=extracted_text[:MAX_TEXT_CHARS],
-    )
+        prompt += SYSTEM_PROMPT_HINDI_ADDON
+    return prompt
 
 
-def safe_parse_claude_response(raw: str) -> dict:
-    """Strip markdown fences and parse JSON from Gemini response."""
+def safe_parse_gemini_response(raw: str) -> dict:
     raw = re.sub(r"```json|```", "", raw).strip()
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
         if match:
             return json.loads(match.group())
-        raise ValueError("AI returned unparseable response")
+        raise ValueError("Gemini returned unparseable response")
 
 
-def call_claude(extracted_text: str, language: str = "en") -> tuple[dict, int, int]:
+def call_gemini(extracted_text: str, language: str = "en") -> tuple[dict, int, int]:
     """
     Call Gemini and return (parsed_dict, input_tokens, output_tokens).
-    One automatic retry on rate limit. Auth errors never exposed to caller.
+    Handles rate limit with one retry and auth errors gracefully.
     """
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        raise RuntimeError("INTERNAL_ERROR|GEMINI_API_KEY not configured|")
+        raise RuntimeError("GEMINI_API_KEY not configured")
 
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-3.5-flash")
-    prompt = _build_prompt(extracted_text, language)
+
+    system = _build_system_prompt(language)
+    user_content = USER_PROMPT_TEMPLATE.format(
+        json_schema=JSON_SCHEMA_STRING,
+        extracted_text=extracted_text[:MAX_TEXT_CHARS],
+    )
+
+    model = genai.GenerativeModel(
+        model_name=DEFAULT_MODEL,
+        system_instruction=system,
+    )
 
     def _do_call():
-        return model.generate_content(prompt)
+        return model.generate_content(
+            user_content,
+            generation_config=genai.GenerationConfig(
+                max_output_tokens=2048,
+                temperature=0.0,
+            ),
+        )
 
-    logger.info("Calling Gemini API (prompt length: %d chars)", len(prompt))
     try:
         response = _do_call()
     except google_exceptions.ResourceExhausted:
@@ -156,29 +156,33 @@ def call_claude(extracted_text: str, language: str = "en") -> tuple[dict, int, i
         time.sleep(2)
         try:
             response = _do_call()
-        except google_exceptions.ResourceExhausted as exc:
-            raise RuntimeError(
-                "INTERNAL_ERROR|AI processing rate limited|Please retry in a few seconds."
-            ) from exc
-    except google_exceptions.PermissionDenied as exc:
+        except google_exceptions.ResourceExhausted as e:
+            raise RuntimeError("INTERNAL_ERROR|AI processing rate limited|Please retry in a few seconds.") from e
+    except google_exceptions.PermissionDenied as e:
         logger.critical("Gemini API key invalid or permission denied")
-        raise RuntimeError("INTERNAL_ERROR|AI service authentication failed|") from exc
-    except Exception as exc:
-        msg = str(exc)
-        logger.error("Gemini call failed: %s: %s", type(exc).__name__, msg)
-        if "timeout" in msg.lower() or "timed out" in msg.lower() or "deadline" in msg.lower():
-            raise RuntimeError("INTERNAL_ERROR|AI processing timed out, please retry|") from exc
-        raise RuntimeError(f"INTERNAL_ERROR|Unexpected AI error|{msg}") from exc
+        raise RuntimeError("INTERNAL_ERROR|AI service authentication failed|Please contact support.") from e
+    except google_exceptions.DeadlineExceeded as e:
+        raise RuntimeError("INTERNAL_ERROR|AI processing timed out, please retry|") from e
+    except Exception as e:
+        msg = str(e)
+        if "timeout" in msg.lower() or "timed out" in msg.lower():
+            raise RuntimeError("INTERNAL_ERROR|AI processing timed out, please retry|") from e
+        raise RuntimeError(f"INTERNAL_ERROR|Unexpected AI error|{msg}") from e
 
-    result = response.text
-    if not result or not result.strip():
-        raise ValueError("EXTRACTION_FAILED|AI returned an empty response|")
+    raw = response.text.strip() if response.text else ""
+    if not raw:
+        raise ValueError("EXTRACTION_FAILED|Gemini returned an empty response|")
 
     input_tokens = 0
     output_tokens = 0
     if hasattr(response, "usage_metadata") and response.usage_metadata:
-        input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
-        output_tokens = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
+        input_tokens = response.usage_metadata.prompt_token_count or 0
+        output_tokens = response.usage_metadata.candidates_token_count or 0
 
-    parsed = safe_parse_claude_response(result)
+    parsed = safe_parse_gemini_response(raw)
     return parsed, input_tokens, output_tokens
+
+
+# Keep backward-compatible alias so any code importing call_claude still works
+call_claude = call_gemini
+safe_parse_claude_response = safe_parse_gemini_response

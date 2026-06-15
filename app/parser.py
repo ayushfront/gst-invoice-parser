@@ -4,24 +4,14 @@ import time
 from typing import Any
 
 from app.claude_client import call_claude
-from app.cost_tracker import COST_PER_CALL_USD, log_call
-from app.file_handler import extract_text, validate_file
-from app.models import InvoiceData, Meta
+from app.cost_tracker import log_call
+from app.file_handler import FileValidationError, extract_text, validate_file
+from app.models import InvoiceData
 
 logger = logging.getLogger(__name__)
 
 MAX_TEXT_CHARS = int(os.getenv("MAX_TEXT_CHARS", "12000"))
 LOW_CONFIDENCE_THRESHOLD = 0.7
-
-
-def _check_gstin(data: dict) -> bool:
-    seller_gstin = (data.get("seller") or {}).get("gstin")
-    buyer_gstin = (data.get("buyer") or {}).get("gstin")
-    return bool(seller_gstin) or bool(buyer_gstin)
-
-
-def _validate_gstin_length(gstin: str | None) -> bool:
-    return gstin is None or len(gstin) == 15
 
 
 def parse_invoice(
@@ -31,54 +21,76 @@ def parse_invoice(
     language: str = "en",
 ) -> dict[str, Any]:
     """
-    Main pipeline: validate → extract text → call Claude → post-process.
-    Returns the full success response dict.
-    Raises ValueError with embedded code for known errors.
-    Raises RuntimeError with embedded code for infra errors.
+    Full pipeline: validate → extract text → call AI → post-process.
+
+    Returns serialisable dict on success.
+    Raises ValueError  with 'CODE|message|detail' for known user-facing errors.
+    Raises RuntimeError with 'CODE|message|detail' for infra errors.
     """
     start_ms = int(time.time() * 1000)
+    file_type = _guess_type(filename, content_type)
 
-    # 1. File validation
-    category = validate_file(filename, content_type, file_bytes)
+    # ------------------------------------------------------------------ #
+    # 1. File validation (type, size, empty)
+    # ------------------------------------------------------------------ #
+    try:
+        category = validate_file(filename, content_type, file_bytes)
+    except FileValidationError as exc:
+        _safe_log(success=False, file_type=file_type, error_code=_code(str(exc)))
+        raise ValueError(str(exc)) from exc
 
+    # ------------------------------------------------------------------ #
     # 2. Text extraction
-    raw_text, page_count = extract_text(category, file_bytes)
+    # ------------------------------------------------------------------ #
+    try:
+        raw_text, page_count = extract_text(category, file_bytes)
+    except FileValidationError as exc:
+        _safe_log(success=False, file_type=file_type, error_code=_code(str(exc)))
+        raise ValueError(str(exc)) from exc
 
     if not raw_text.strip():
+        _safe_log(success=False, file_type=file_type, error_code="EXTRACTION_FAILED")
         raise ValueError("EXTRACTION_FAILED|Could not extract any text from the file|")
 
     truncated = len(raw_text) > MAX_TEXT_CHARS
     raw_text = raw_text[:MAX_TEXT_CHARS]
 
-    # 3. Call Claude
+    # ------------------------------------------------------------------ #
+    # 3. AI extraction
+    # ------------------------------------------------------------------ #
     parsed, input_tokens, output_tokens = call_claude(raw_text, language=language)
 
-    # 4. Handle Claude's NOT_AN_INVOICE signal
+    # ------------------------------------------------------------------ #
+    # 4. Content validation
+    # ------------------------------------------------------------------ #
+
+    # 4a. Not an invoice
     if parsed.get("error") == "NOT_AN_INVOICE":
-        log_call(success=False)
+        _safe_log(success=False, file_type=file_type, error_code="INVALID_FORMAT")
         raise ValueError(
             "INVALID_FORMAT|File does not appear to be a GST invoice|"
-            "Claude could not identify invoice fields in the document."
+            "The AI could not identify invoice fields in the document."
         )
 
-    # 5. Check for credit notes
-    invoice_num_str = str(parsed.get("invoice_number") or "").lower()
-    if "credit note" in invoice_num_str or _is_credit_note(parsed):
-        log_call(success=False)
+    # 4b. Credit note / debit note
+    if _is_credit_note(parsed):
+        _safe_log(success=False, file_type=file_type, error_code="INVALID_FORMAT")
         raise ValueError(
             "INVALID_FORMAT|Credit notes not supported in v1|"
             "Please upload a standard GST tax invoice."
         )
 
-    # 6. GSTIN validation
-    if not _check_gstin(parsed):
-        log_call(success=False)
+    # 4c. GSTIN check
+    if not _has_any_gstin(parsed):
+        _safe_log(success=False, file_type=file_type, error_code="MISSING_GSTIN")
         raise ValueError(
             "MISSING_GSTIN|No GSTIN found — not a valid GST invoice|"
             "A valid GST invoice must contain at least a seller GSTIN."
         )
 
-    # 7. Populate meta fields
+    # ------------------------------------------------------------------ #
+    # 5. Populate meta
+    # ------------------------------------------------------------------ #
     elapsed_ms = int(time.time() * 1000) - start_ms
     meta = parsed.get("meta") or {}
     meta["extraction_time_ms"] = elapsed_ms
@@ -86,34 +98,77 @@ def parse_invoice(
     meta["currency"] = meta.get("currency") or "INR"
     if truncated:
         meta["truncated"] = True
+
     confidence = meta.get("confidence_score")
-    if confidence is not None and confidence < LOW_CONFIDENCE_THRESHOLD:
+    if confidence is not None and float(confidence) < LOW_CONFIDENCE_THRESHOLD:
         meta["warning"] = "Low confidence extraction — please verify manually"
     parsed["meta"] = meta
 
-    # 8. Validate with Pydantic (raises if schema violated)
+    # ------------------------------------------------------------------ #
+    # 6. Pydantic validation
+    # ------------------------------------------------------------------ #
     try:
         invoice_data = InvoiceData(**parsed)
-    except Exception as e:
-        missing = str(e)
-        log_call(success=False)
-        raise ValueError(f"EXTRACTION_FAILED|Claude response missing required fields|{missing}") from e
+    except Exception as exc:
+        _safe_log(success=False, file_type=file_type, error_code="EXTRACTION_FAILED")
+        raise ValueError(
+            f"EXTRACTION_FAILED|AI response missing required fields|{exc}"
+        ) from exc
 
-    # 9. Cost tracking (best-effort — don't fail the request if DB is broken)
+    # ------------------------------------------------------------------ #
+    # 7. Cost tracking (non-fatal — never fail the request on DB errors)
+    # ------------------------------------------------------------------ #
     try:
-        log_call(success=True, input_tokens=input_tokens, output_tokens=output_tokens)
+        log_call(
+            success=True,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            file_type=file_type,
+        )
     except RuntimeError:
-        raise  # circuit breaker — re-raise
-    except Exception as e:
-        logger.error("Cost tracking failed (non-fatal): %s", e)
+        raise   # circuit breaker — surface this
+    except Exception as exc:
+        logger.error("Cost tracking failed (non-fatal): %s", exc)
 
     return invoice_data.model_dump()
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _has_any_gstin(data: dict) -> bool:
+    seller_gstin = (data.get("seller") or {}).get("gstin")
+    buyer_gstin = (data.get("buyer") or {}).get("gstin")
+    return bool(seller_gstin) or bool(buyer_gstin)
+
+
 def _is_credit_note(data: dict) -> bool:
-    """Heuristic to detect credit notes from extracted fields."""
-    for field in ["invoice_number", "invoice_type"]:
+    for field in ("invoice_number", "invoice_type"):
         val = str(data.get(field) or "").lower()
-        if "credit" in val or "cr note" in val or "debit" in val:
+        if any(kw in val for kw in ("credit note", "cr note", "debit note", "dn ")):
             return True
     return False
+
+
+def _code(error_str: str) -> str:
+    """Extract the CODE from 'CODE|message|detail' format."""
+    return error_str.split("|")[0] if "|" in error_str else "INTERNAL_ERROR"
+
+
+def _guess_type(filename: str, content_type: str) -> str:
+    if "pdf" in content_type or filename.lower().endswith(".pdf"):
+        return "pdf"
+    if "image" in content_type or any(filename.lower().endswith(e) for e in (".jpg", ".jpeg", ".png")):
+        return "image"
+    return "unknown"
+
+
+def _safe_log(**kwargs) -> None:
+    """Log cost record, swallowing any DB errors."""
+    try:
+        log_call(**kwargs)
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        logger.error("Cost tracking failed (non-fatal): %s", exc)
