@@ -3,6 +3,7 @@ import os
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from typing import List
 from fastapi.responses import JSONResponse, RedirectResponse
 
 load_dotenv()
@@ -96,6 +97,56 @@ async def parse(
         )
 
 
+@app.post("/parse/bulk")
+async def parse_bulk(
+    files: List[UploadFile] = File(...),
+    language: str = Form(default="en"),
+    x_rapidapi_proxy_secret: str | None = Header(default=None),
+):
+    _check_rapidapi(x_rapidapi_proxy_secret)
+
+    if language not in ("en", "hi"):
+        language = "en"
+
+    results = []
+    for upload in files:
+        filename = upload.filename or "upload.pdf"
+        content_type = upload.content_type or "application/octet-stream"
+        try:
+            file_bytes = await upload.read()
+            invoice_data = parse_invoice(
+                filename=filename,
+                content_type=content_type,
+                file_bytes=file_bytes,
+                language=language,
+            )
+            results.append({"filename": filename, "success": True, "data": invoice_data, "error": None})
+        except (ValueError, FileNotFoundError) as exc:
+            logger.warning("Bulk parse validation error [%s]: %s", filename, exc)
+            error = _parse_error_str(str(exc))
+            results.append({"filename": filename, "success": False, "data": None, "error": error})
+        except RuntimeError as exc:
+            logger.error("Bulk parse runtime error [%s]: %s", filename, exc)
+            error = _parse_error_str(str(exc))
+            results.append({"filename": filename, "success": False, "data": None, "error": error})
+        except Exception as exc:
+            logger.exception("Bulk parse unexpected error [%s]: %s", filename, exc)
+            results.append({
+                "filename": filename,
+                "success": False,
+                "data": None,
+                "error": {"code": "INTERNAL_ERROR", "message": "An unexpected error occurred.", "detail": ""},
+            })
+
+    successful = sum(1 for r in results if r["success"])
+    return JSONResponse(status_code=200, content={
+        "total": len(results),
+        "successful": successful,
+        "failed": len(results) - successful,
+        "results": results,
+    })
+
+
 @app.get("/dashboard")
 async def dashboard(x_internal_secret: str | None = Header(default=None)):
     _check_internal(x_internal_secret)
@@ -126,6 +177,16 @@ _STATUS_MAP = {
     "RATE_LIMITED": 429,
     "INTERNAL_ERROR": 500,
 }
+
+
+def _parse_error_str(message: str) -> dict:
+    """Convert 'CODE|message|detail' string into an error dict for bulk results."""
+    parts = message.split("|", 2)
+    if len(parts) == 3:
+        return {"code": parts[0], "message": parts[1], "detail": parts[2]}
+    if len(parts) == 2:
+        return {"code": parts[0], "message": parts[1], "detail": ""}
+    return {"code": "INTERNAL_ERROR", "message": message, "detail": ""}
 
 
 def _dispatch_error(message: str, default_status: int = 400) -> JSONResponse:
