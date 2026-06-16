@@ -10,6 +10,12 @@ logger = logging.getLogger(__name__)
 
 SUPPORTED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png"}
 
+# First bytes that identify each real file format
+_MAGIC: dict[str, list[bytes]] = {
+    "pdf":   [b"%PDF"],
+    "image": [b"\xff\xd8\xff", b"\x89PNG\r\n\x1a\n", b"GIF8"],
+}
+
 MIME_TO_CATEGORY = {
     "application/pdf": "pdf",
     "image/jpeg": "image",
@@ -19,7 +25,8 @@ MIME_TO_CATEGORY = {
 
 MAX_PDF_BYTES = 10 * 1024 * 1024   # 10 MB
 MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
-MIN_OCR_CHARS = 50
+MIN_OCR_CHARS  = 50
+MAX_PDF_PAGES  = 50
 
 
 class FileValidationError(ValueError):
@@ -58,6 +65,13 @@ def validate_file(filename: str, content_type: str, file_bytes: bytes) -> str:
     if ext == ".pdf" and category == "image":
         category = "image"
 
+    # Magic bytes — verify actual content matches claimed type
+    if not any(file_bytes.startswith(sig) for sig in _MAGIC[category]):
+        raise FileValidationError(
+            f"INVALID_FORMAT|File content does not match its extension '{ext}'|"
+            "The file appears to be corrupted or misidentified."
+        )
+
     # Size checks
     size = len(file_bytes)
     if category == "pdf" and size > MAX_PDF_BYTES:
@@ -77,6 +91,11 @@ def extract_text_from_pdf(file_bytes: bytes) -> Tuple[str, int]:
     try:
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
             page_count = len(pdf.pages)
+            if page_count > MAX_PDF_PAGES:
+                raise FileValidationError(
+                    f"INVALID_FORMAT|PDF has {page_count} pages — maximum is {MAX_PDF_PAGES}|"
+                    "Please upload individual invoice pages rather than a large document."
+                )
             pages_text = [page.extract_text() or "" for page in pdf.pages]
             text = "\n".join(pages_text)
     except Exception as exc:

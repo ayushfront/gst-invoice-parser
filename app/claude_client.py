@@ -29,7 +29,14 @@ Rules you must follow without exception:
 5. GSTIN must be exactly 15 characters if present.
 6. If this does not appear to be a GST invoice, return: {"error": "NOT_AN_INVOICE"}
 7. confidence_score must reflect how certain you are (0.0 to 1.0). Below 0.7 means unreliable.
-8. If a line item's tax type cannot be determined, set cgst_rate, sgst_rate, igst_rate all to null."""
+8. Tax type inference — apply these rules in order for each line item:
+   a. If the invoice explicitly labels CGST and SGST amounts → use cgst_rate/cgst_amount and sgst_rate/sgst_amount.
+   b. If the invoice explicitly labels IGST → use igst_rate/igst_amount.
+   c. If only a combined GST% is stated (e.g. "18% GST") without CGST/SGST/IGST labels:
+      - If seller and buyer share the same 2-digit state code → split equally: cgst_rate = X/2, sgst_rate = X/2.
+      - Otherwise (different states, or buyer has no GSTIN) → treat as IGST: igst_rate = X.
+   d. Always compute the corresponding tax amounts from (taxable_amount × rate / 100) when the rate is known.
+9. Tax amount from math — if grand_total and subtotal are both present and all tax amounts are still null, compute total_tax = grand_total − subtotal and populate the most likely tax field (igst_amount if inter-state or B2C, else cgst_amount + sgst_amount equally)."""
 
 SYSTEM_PROMPT_HINDI_ADDON = """
 The invoice may be in Hindi or a mix of Hindi and English.
@@ -37,74 +44,38 @@ Extract all fields regardless of language.
 Return all extracted values in English in the JSON output."""
 
 JSON_SCHEMA_STRING = """{
-  "invoice_number": "string or null",
-  "invoice_date": "YYYY-MM-DD or null",
-  "invoice_type": "B2B or B2C or null",
-  "seller": {
-    "name": "string or null",
-    "gstin": "15-char string or null",
-    "address": "string or null",
-    "state_code": "2-digit string or null"
-  },
-  "buyer": {
-    "name": "string or null",
-    "gstin": "15-char string or null (null for B2C)",
-    "address": "string or null",
-    "state_code": "2-digit string or null"
-  },
-  "line_items": [
-    {
-      "description": "string or null",
-      "hsn_sac_code": "string or null",
-      "quantity": "number or null",
-      "unit": "string or null",
-      "unit_price": "number or null",
-      "taxable_amount": "number or null",
-      "cgst_rate": "number or null",
-      "sgst_rate": "number or null",
-      "igst_rate": "number or null",
-      "cgst_amount": "number or null",
-      "sgst_amount": "number or null",
-      "igst_amount": "number or null",
-      "total_amount": "number or null"
-    }
-  ],
+  "invoice_number": null,
+  "invoice_date": null,
+  "invoice_type": null,
+  "seller": {"name": null, "gstin": null, "address": null, "state_code": null},
+  "buyer":  {"name": null, "gstin": null, "address": null, "state_code": null},
+  "line_items": [{
+    "description": null, "hsn_sac_code": null, "quantity": null, "unit": null,
+    "unit_price": null, "taxable_amount": null,
+    "cgst_rate": null, "sgst_rate": null, "igst_rate": null,
+    "cgst_amount": null, "sgst_amount": null, "igst_amount": null,
+    "total_amount": null
+  }],
   "tax_summary": {
-    "subtotal": "number or null",
-    "total_cgst": "number or null",
-    "total_sgst": "number or null",
-    "total_igst": "number or null",
-    "total_cess": "number or null",
-    "round_off": "number or null",
-    "grand_total": "number or null",
-    "amount_in_words": "string or null"
+    "subtotal": null, "total_cgst": null, "total_sgst": null, "total_igst": null,
+    "total_cess": null, "round_off": null, "grand_total": null, "amount_in_words": null
   },
-  "payment": {
-    "bank_name": "string or null",
-    "account_number": "string or null",
-    "ifsc_code": "string or null",
-    "due_date": "YYYY-MM-DD or null"
-  },
-  "meta": {
-    "confidence_score": "float 0.0-1.0",
-    "extraction_time_ms": null,
-    "pages_processed": null,
-    "currency": "INR"
-  }
+  "payment": {"bank_name": null, "account_number": null, "ifsc_code": null, "due_date": null},
+  "meta": {"confidence_score": 0.0, "extraction_time_ms": null, "pages_processed": null, "currency": "INR"}
 }"""
 
 USER_PROMPT_TEMPLATE = """{system}
 
-Extract all GST invoice data from the following invoice text and return as JSON matching this exact structure:
+Extract GST invoice data. Return JSON only, matching this structure exactly:
 
 {json_schema}
 
-Invoice text:
+Types: invoice_type = "B2B"|"B2C"|null. Dates = YYYY-MM-DD. Amounts = float. GSTIN = 15 chars.
+
+Invoice:
 ---
 {extracted_text}
----
-
-Return only the JSON object. Nothing else."""
+---"""
 
 MAX_TEXT_CHARS = int(os.getenv("MAX_TEXT_CHARS", "12000"))
 
@@ -142,7 +113,14 @@ def call_claude(extracted_text: str, language: str = "en") -> tuple[dict, int, i
         raise RuntimeError("INTERNAL_ERROR|GEMINI_API_KEY not configured|")
 
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("nano-banana-pro-preview")
+    model = genai.GenerativeModel(
+        "nano-banana-pro-preview",
+        generation_config=genai.GenerationConfig(
+            response_mime_type="application/json",
+            temperature=0.1,
+            max_output_tokens=2048,
+        ),
+    )
     prompt = _build_prompt(extracted_text, language)
 
     def _do_call():

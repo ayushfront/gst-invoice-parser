@@ -1,15 +1,42 @@
 import logging
 import os
+import time
+from collections import defaultdict, deque
 from pathlib import Path
+from threading import Lock
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.staticfiles import StaticFiles
 from typing import List
 from fastapi.responses import FileResponse, JSONResponse
 
 load_dotenv()
+
+# ── rate limiter (in-memory, no extra packages) ───────────────
+_RATE_LIMIT_RPM  = int(os.environ.get("RATE_LIMIT_RPM", "20"))   # requests per minute per IP
+_rate_lock       = Lock()
+_ip_timestamps: dict[str, deque] = defaultdict(deque)
+
+def _rate_limit(request: Request) -> None:
+    ip  = (request.client.host if request.client else "unknown")
+    now = time.monotonic()
+    with _rate_lock:
+        dq = _ip_timestamps[ip]
+        # drop timestamps older than 60 s
+        while dq and now - dq[0] > 60.0:
+            dq.popleft()
+        if len(dq) >= _RATE_LIMIT_RPM:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "code": "RATE_LIMITED",
+                    "message": f"Too many requests — limit is {_RATE_LIMIT_RPM} per minute.",
+                    "detail": "Please wait before retrying.",
+                },
+            )
+        dq.append(now)
 
 from app.cost_tracker import get_daily_summary
 from app.errors import error_response
@@ -43,7 +70,8 @@ app = FastAPI(
 _STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
-VERSION = "1.0.0"
+VERSION         = "1.0.0"
+MAX_BATCH_FILES = int(os.environ.get("MAX_BATCH_FILES", "20"))
 
 # ── shared response examples ─────────────────────────────────
 _EXAMPLE_INVOICE_DATA = {
@@ -165,13 +193,19 @@ def _check_rapidapi(secret: str | None) -> None:
     if not required or required == "dev":
         return
     if secret != required:
-        raise HTTPException(status_code=403, detail="Forbidden")
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "FORBIDDEN", "message": "Invalid or missing proxy secret.", "detail": ""},
+        )
 
 
 def _check_internal(secret: str | None) -> None:
     required = os.environ.get("INTERNAL_SECRET", "")
     if required and secret != required:
-        raise HTTPException(status_code=403, detail="Forbidden")
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "FORBIDDEN", "message": "Invalid or missing internal secret.", "detail": ""},
+        )
 
 
 # ── routes ────────────────────────────────────────────────────
@@ -220,6 +254,7 @@ async def health():
     responses={200: _PARSE_200, 400: _PARSE_400, 422: _PARSE_422, 500: _PARSE_500},
 )
 async def parse(
+    request: Request,
     file: UploadFile = File(..., description="GST invoice file — PDF, JPG, or PNG."),
     language: str = Form(default="en", description="Invoice language: `en` (English) or `hi` (Hindi)."),
     x_rapidapi_proxy_secret: str | None = Header(
@@ -227,6 +262,7 @@ async def parse(
         description="RapidAPI proxy secret. Leave blank for local / direct API use.",
         include_in_schema=True,
     ),
+    _rl: None = Depends(_rate_limit),
 ):
     _check_rapidapi(x_rapidapi_proxy_secret)
 
@@ -308,14 +344,24 @@ async def parse(
     },
 )
 async def parse_bulk(
+    request: Request,
     files: List[UploadFile] = File(..., description="One or more GST invoice files — PDF, JPG, or PNG."),
     language: str = Form(default="en", description="Invoice language: `en` (English) or `hi` (Hindi)."),
     x_rapidapi_proxy_secret: str | None = Header(
         default=None,
         description="RapidAPI proxy secret. Leave blank for local / direct API use.",
     ),
+    _rl: None = Depends(_rate_limit),
 ):
     _check_rapidapi(x_rapidapi_proxy_secret)
+
+    if len(files) > MAX_BATCH_FILES:
+        return error_response(
+            code="TOO_MANY_FILES",
+            message=f"Batch limit is {MAX_BATCH_FILES} files per request.",
+            detail=f"Received {len(files)} files.",
+            status=400,
+        )
 
     if language not in ("en", "hi"):
         language = "en"
@@ -373,6 +419,8 @@ async def parse_bulk(
                         "date": "2024-11-14",
                         "total_calls": 42,
                         "successful_calls": 40,
+                        "failed_calls": 2,
+                        "success_rate": 95.24,
                         "total_cost_usd": 0.000182,
                         "total_revenue_usd": 3.36,
                         "total_profit_usd": 3.3598,
@@ -392,14 +440,20 @@ async def dashboard(
 ):
     _check_internal(x_internal_secret)
     summary = get_daily_summary()
+    total = summary["total_calls"]
+    successful = summary["successful_calls"]
+    failed = total - successful
+    success_rate = round(successful / total * 100, 2) if total > 0 else 0.0
     revenue_target = float(os.environ.get("REVENUE_PER_CALL_USD", "0.08")) * 80
     projected = (
-        summary["total_profit_usd"] / summary["total_calls"] * 80
-        if summary["total_calls"] > 0
+        summary["total_profit_usd"] / total * 80
+        if total > 0
         else 0
     )
     return {
         **summary,
+        "failed_calls": failed,
+        "success_rate": success_rate,
         "on_track_for_daily_target": summary["total_profit_usd"] >= revenue_target * 0.5,
         "projected_daily_profit": round(projected, 4),
     }
