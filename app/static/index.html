@@ -909,12 +909,12 @@
     <span class="topnav-title" id="topnav-title">Dashboard</span>
     <div class="topnav-spacer"></div>
     <div class="topnav-actions">
-      <a href="/docs" target="_blank" class="topnav-link">
+      <button class="topnav-link" onclick="navigate('docs')" style="background:none;border:none;cursor:pointer;">
         <svg width="13" height="13" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M6 2H2v11h11V9M9 1h5v5M14 1L7 8" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
         API Docs
-      </a>
+      </button>
       <button class="status-indicator" id="status-btn" aria-label="System status">
         <span class="status-dot checking" id="status-dot"></span>
         <span id="status-label">Checking…</span>
