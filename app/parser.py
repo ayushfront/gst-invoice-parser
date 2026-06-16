@@ -61,6 +61,11 @@ def parse_invoice(
     parsed, input_tokens, output_tokens = call_claude(raw_text, language=language)
 
     # ------------------------------------------------------------------ #
+    # 3b. Tax inference post-processing (fills gaps the AI left null)
+    # ------------------------------------------------------------------ #
+    parsed = _infer_tax(parsed)
+
+    # ------------------------------------------------------------------ #
     # 4. Content validation
     # ------------------------------------------------------------------ #
 
@@ -162,6 +167,81 @@ def _guess_type(filename: str, content_type: str) -> str:
     if "image" in content_type or any(filename.lower().endswith(e) for e in (".jpg", ".jpeg", ".png")):
         return "image"
     return "unknown"
+
+
+def _infer_tax(data: dict) -> dict:
+    """
+    Deterministic tax inference pass.
+
+    Two situations handled:
+    A) Line items have a known rate but null amounts → compute amounts.
+    B) All tax fields are null but grand_total − subtotal is computable → fill
+       the most likely tax field based on seller/buyer state codes.
+    """
+    seller_state = ((data.get("seller") or {}).get("state_code") or "").strip()
+    buyer_state  = ((data.get("buyer")  or {}).get("state_code") or "").strip()
+    same_state   = bool(seller_state and buyer_state and seller_state == buyer_state)
+
+    items = data.get("line_items") or []
+    for item in items:
+        taxable = item.get("taxable_amount")
+        if taxable is None:
+            continue
+
+        # A) Rate known → compute amounts
+        if item.get("igst_rate") is not None and item.get("igst_amount") is None:
+            item["igst_amount"] = round(taxable * item["igst_rate"] / 100, 2)
+
+        if item.get("cgst_rate") is not None and item.get("cgst_amount") is None:
+            item["cgst_amount"] = round(taxable * item["cgst_rate"] / 100, 2)
+
+        if item.get("sgst_rate") is not None and item.get("sgst_amount") is None:
+            item["sgst_amount"] = round(taxable * item["sgst_rate"] / 100, 2)
+
+        # B) All tax fields null but total_amount > taxable → back-compute
+        total = item.get("total_amount")
+        all_null = all(item.get(f) is None for f in (
+            "igst_rate", "igst_amount", "cgst_rate", "cgst_amount", "sgst_rate", "sgst_amount"
+        ))
+        if all_null and total is not None and total > taxable:
+            tax_amt = round(total - taxable, 2)
+            if same_state:
+                half = round(tax_amt / 2, 2)
+                item["cgst_amount"] = half
+                item["sgst_amount"] = round(tax_amt - half, 2)
+            else:
+                item["igst_amount"] = tax_amt
+
+    # Re-aggregate tax_summary from line items
+    tax = data.get("tax_summary") or {}
+    if items:
+        def _sum(field):
+            vals = [i.get(field) for i in items if i.get(field) is not None]
+            return round(sum(vals), 2) if vals else None
+
+        if tax.get("total_igst") is None:
+            tax["total_igst"] = _sum("igst_amount")
+        if tax.get("total_cgst") is None:
+            tax["total_cgst"] = _sum("cgst_amount")
+        if tax.get("total_sgst") is None:
+            tax["total_sgst"] = _sum("sgst_amount")
+
+        # Last resort: grand_total − subtotal if all summary tax fields still null
+        subtotal   = tax.get("subtotal")
+        grand      = tax.get("grand_total")
+        all_null_s = all(tax.get(f) is None for f in ("total_igst", "total_cgst", "total_sgst"))
+        if all_null_s and subtotal is not None and grand is not None and grand > subtotal:
+            tax_total = round(grand - subtotal, 2)
+            if same_state:
+                half = round(tax_total / 2, 2)
+                tax["total_cgst"] = half
+                tax["total_sgst"] = round(tax_total - half, 2)
+            else:
+                tax["total_igst"] = tax_total
+
+        data["tax_summary"] = tax
+
+    return data
 
 
 def _safe_log(**kwargs) -> None:

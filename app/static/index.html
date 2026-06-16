@@ -1,0 +1,1940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GST Invoice Parser</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232563EB'/%3E%3Cpath d='M8 8h10l6 6v10H8V8z' stroke='white' stroke-width='1.5' stroke-linejoin='round' fill='none'/%3E%3Cpath d='M18 8v6h6' stroke='white' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M11 17h10M11 20h7' stroke='white' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* ═══════════════════════════════════════════════════
+       DESIGN SYSTEM — CSS VARIABLES
+       Change these to theme the entire app.
+    ═══════════════════════════════════════════════════ */
+    :root {
+      --bg-app:              #F8FAFC;
+      --bg-card:             #FFFFFF;
+      --bg-sidebar:          #111827;
+      --bg-sidebar-hover:    rgba(255,255,255,0.06);
+      --bg-sidebar-active:   rgba(255,255,255,0.10);
+
+      --text-primary:        #111827;
+      --text-secondary:      #64748B;
+      --text-tertiary:       #94A3B8;
+      --text-inverse:        #FFFFFF;
+      --text-sidebar:        rgba(255,255,255,0.60);
+      --text-sidebar-active: #FFFFFF;
+
+      --border:              #E5E7EB;
+      --border-focus:        #2563EB;
+
+      --primary:             #2563EB;
+      --primary-hover:       #1D4ED8;
+      --primary-light:       #EFF6FF;
+
+      --success:             #059669;
+      --success-light:       #ECFDF5;
+      --error:               #DC2626;
+      --error-light:         #FEF2F2;
+      --warning:             #D97706;
+      --warning-light:       #FFFBEB;
+
+      --shadow-sm:           0 1px 2px rgba(0,0,0,0.05);
+      --shadow-md:           0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+      --shadow-lg:           0 4px 6px rgba(0,0,0,0.05), 0 10px 15px rgba(0,0,0,0.06);
+
+      --radius-sm:           6px;
+      --radius-md:           8px;
+      --radius-lg:           12px;
+      --radius-xl:           16px;
+
+      --sidebar-w:           240px;
+      --topnav-h:            56px;
+
+      --t-fast:              150ms ease;
+      --t-base:              200ms ease;
+    }
+
+    /* ═══════════════════════════════════════════════════
+       RESET & BASE
+    ═══════════════════════════════════════════════════ */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html { font-size: 16px; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg-app);
+      color: var(--text-primary);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    button  { font-family: inherit; cursor: pointer; border: none; background: none; }
+    a       { text-decoration: none; color: inherit; }
+    input, select, textarea { font-family: inherit; }
+
+    /* ═══════════════════════════════════════════════════
+       APP SHELL LAYOUT
+    ═══════════════════════════════════════════════════ */
+    .app-shell {
+      display: grid;
+      grid-template-columns: var(--sidebar-w) 1fr;
+      grid-template-rows: var(--topnav-h) 1fr;
+      grid-template-areas: "sidebar topnav" "sidebar main";
+      min-height: 100vh;
+    }
+
+    /* ═══════════════════════════════════════════════════
+       TOP NAVIGATION
+    ═══════════════════════════════════════════════════ */
+    .topnav {
+      grid-area: topnav;
+      background: var(--bg-card);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .topnav-title {
+      font-size: 0.9375rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .topnav-spacer { flex: 1; }
+    .topnav-actions { display: flex; align-items: center; gap: 8px; }
+
+    .topnav-link {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 12px;
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      border-radius: var(--radius-sm);
+      transition: color var(--t-fast), background var(--t-fast);
+    }
+    .topnav-link:hover { color: var(--text-primary); background: var(--bg-app); }
+
+    /* Status pill */
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 12px;
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      background: var(--bg-card);
+      cursor: pointer;
+      transition: border-color var(--t-fast), box-shadow var(--t-fast);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+    }
+    .status-indicator:hover {
+      border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.06);
+    }
+    .status-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--success);
+      flex-shrink: 0;
+    }
+    .status-dot.checking { background: var(--warning); }
+    .status-dot.error    { background: var(--error); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+    .status-dot { animation: pulse 3s ease-in-out infinite; }
+
+    /* ═══════════════════════════════════════════════════
+       SIDEBAR
+    ═══════════════════════════════════════════════════ */
+    .sidebar {
+      grid-area: sidebar;
+      background: var(--bg-sidebar);
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0; left: 0;
+      width: var(--sidebar-w);
+      height: 100vh;
+      z-index: 200;
+    }
+    .sidebar-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 20px;
+      height: var(--topnav-h);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      flex-shrink: 0;
+    }
+    .sidebar-logo {
+      width: 28px; height: 28px;
+      background: var(--primary);
+      border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .sidebar-logo svg { width: 15px; height: 15px; }
+    .sidebar-brand-name {
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: var(--text-inverse);
+      letter-spacing: -0.01em;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .sidebar-nav {
+      flex: 1;
+      padding: 12px 8px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar-section-label {
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.28);
+      padding: 12px 12px 4px;
+    }
+    .sidebar-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-sidebar);
+      cursor: pointer;
+      transition: all var(--t-fast);
+      border: 1px solid transparent;
+      user-select: none;
+    }
+    .sidebar-item:hover { background: var(--bg-sidebar-hover); color: var(--text-sidebar-active); }
+    .sidebar-item.active {
+      background: var(--bg-sidebar-active);
+      color: var(--text-sidebar-active);
+      border-color: rgba(255,255,255,0.07);
+    }
+    .sidebar-item svg { width: 15px; height: 15px; opacity: 0.55; flex-shrink: 0; transition: opacity var(--t-fast); }
+    .sidebar-item.active svg, .sidebar-item:hover svg { opacity: 1; }
+    .sidebar-footer {
+      padding: 8px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      flex-shrink: 0;
+    }
+    .sidebar-footer-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      color: rgba(255,255,255,0.32);
+      transition: all var(--t-fast);
+    }
+    .sidebar-footer-link:hover { background: var(--bg-sidebar-hover); color: rgba(255,255,255,0.6); }
+    .sidebar-footer-link svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+    /* ═══════════════════════════════════════════════════
+       MAIN CONTENT
+    ═══════════════════════════════════════════════════ */
+    .main {
+      grid-area: main;
+      padding: 32px;
+      min-height: calc(100vh - var(--topnav-h));
+    }
+    .content-wrap { max-width: 1060px; }
+    .page { display: none; }
+    .page.active { display: block; }
+
+    .page-header { margin-bottom: 28px; }
+    .page-header h1 {
+      font-size: 1.375rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      letter-spacing: -0.02em;
+    }
+    .page-header p {
+      font-size: 0.9375rem;
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+
+    /* ═══════════════════════════════════════════════════
+       BUTTONS
+    ═══════════════════════════════════════════════════ */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 16px;
+      border-radius: var(--radius-md);
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all var(--t-fast);
+      border: 1px solid transparent;
+      line-height: 1;
+      white-space: nowrap;
+      user-select: none;
+    }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+    .btn-primary  { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .btn-primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+    .btn-secondary {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border-color: var(--border);
+      box-shadow: var(--shadow-sm);
+    }
+    .btn-secondary:hover { background: var(--bg-app); border-color: #CBD5E1; }
+    .btn-ghost  { background: transparent; color: var(--text-secondary); }
+    .btn-ghost:hover { background: var(--bg-app); color: var(--text-primary); }
+    .btn-sm  { padding: 6px 12px; font-size: 0.8125rem; }
+    .btn-lg  { padding: 11px 22px; font-size: 0.9375rem; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      width: 13px; height: 13px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      flex-shrink: 0;
+    }
+    .spinner.dark { border-color: rgba(0,0,0,0.12); border-top-color: var(--text-secondary); }
+
+    /* ═══════════════════════════════════════════════════
+       CARDS
+    ═══════════════════════════════════════════════════ */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      box-shadow: var(--shadow-sm);
+    }
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .card-title   { font-size: 0.9375rem; font-weight: 600; color: var(--text-primary); }
+    .card-subtitle { font-size: 0.8125rem; color: var(--text-secondary); margin-top: 2px; }
+
+    /* ═══════════════════════════════════════════════════
+       SKELETON LOADING
+    ═══════════════════════════════════════════════════ */
+    @keyframes shimmer {
+      0%   { background-position: -600px 0; }
+      100% { background-position:  600px 0; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg, #F1F5F9 25%, #E8EDF2 50%, #F1F5F9 75%);
+      background-size: 1200px 100%;
+      animation: shimmer 1.6s infinite;
+      border-radius: var(--radius-sm);
+    }
+    .sk-metric { height: 84px; border-radius: var(--radius-lg); }
+    .sk-text   { height: 13px; border-radius: 4px; }
+    .sk-row    { height: 42px; border-radius: var(--radius-sm); }
+
+    /* ═══════════════════════════════════════════════════
+       BADGES
+    ═══════════════════════════════════════════════════ */
+    .badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 9px;
+      border-radius: 100px;
+      font-size: 0.72rem; font-weight: 700;
+      white-space: nowrap; letter-spacing: 0.01em;
+    }
+    .badge-success { background: var(--success-light); color: var(--success); }
+    .badge-error   { background: var(--error-light);   color: var(--error); }
+    .badge-warning { background: var(--warning-light); color: var(--warning); }
+    .badge-neutral { background: #F1F5F9; color: var(--text-secondary); }
+    .badge-blue    { background: var(--primary-light); color: var(--primary); }
+    .badge-green   { background: var(--success-light); color: var(--success); }
+
+    /* ═══════════════════════════════════════════════════
+       EMPTY STATE
+    ═══════════════════════════════════════════════════ */
+    .empty-state {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 64px 32px; text-align: center;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-sm);
+    }
+    .empty-icon {
+      width: 52px; height: 52px;
+      background: var(--primary-light);
+      border-radius: var(--radius-lg);
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 20px;
+    }
+    .empty-icon svg { width: 22px; height: 22px; color: var(--primary); }
+    .empty-title { font-size: 1rem; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
+    .empty-desc  { font-size: 0.9375rem; color: var(--text-secondary); max-width: 340px; line-height: 1.6; margin-bottom: 24px; }
+
+    /* ═══════════════════════════════════════════════════
+       SECTION LABEL
+    ═══════════════════════════════════════════════════ */
+    .section-label {
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.09em;
+      text-transform: uppercase;
+      color: var(--text-tertiary);
+      margin-bottom: 12px;
+    }
+
+    /* ═══════════════════════════════════════════════════
+       DASHBOARD — HERO
+    ═══════════════════════════════════════════════════ */
+    .dash-hero {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 28px 32px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow-sm);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .dash-hero-text h2 {
+      font-size: 1.25rem; font-weight: 700;
+      color: var(--text-primary); letter-spacing: -0.02em; margin-bottom: 4px;
+    }
+    .dash-hero-text p { font-size: 0.9375rem; color: var(--text-secondary); line-height: 1.6; max-width: 480px; }
+    .dash-hero-actions { display: flex; gap: 10px; flex-shrink: 0; }
+
+    /* ═══════════════════════════════════════════════════
+       METRICS GRID
+    ═══════════════════════════════════════════════════ */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .metric-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px 22px;
+      box-shadow: var(--shadow-sm);
+      transition: box-shadow var(--t-base);
+    }
+    .metric-card:hover { box-shadow: var(--shadow-md); }
+    .metric-label { font-size: 0.8125rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 8px; }
+    .metric-value {
+      font-size: 1.875rem; font-weight: 700;
+      color: var(--text-primary); letter-spacing: -0.03em; line-height: 1.1;
+    }
+    .metric-value.c-success { color: var(--success); }
+    .metric-value.c-error   { color: var(--error); }
+    .metric-sub { font-size: 0.75rem; color: var(--text-tertiary); margin-top: 4px; }
+
+    /* ═══════════════════════════════════════════════════
+       PRODUCT INFO CARD
+    ═══════════════════════════════════════════════════ */
+    .product-info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+      gap: 12px;
+    }
+    .product-info-item {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 16px 18px;
+      box-shadow: var(--shadow-sm);
+    }
+    .product-info-label {
+      font-size: 0.6875rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      color: var(--text-tertiary); margin-bottom: 6px;
+    }
+    .product-info-value { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); }
+
+    /* ═══════════════════════════════════════════════════
+       FILE UPLOAD ZONE
+    ═══════════════════════════════════════════════════ */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius-xl);
+      padding: 52px 32px;
+      text-align: center;
+      cursor: pointer;
+      transition: all var(--t-base);
+      background: var(--bg-card);
+      position: relative;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: var(--primary);
+      background: var(--primary-light);
+    }
+    .upload-zone.drag-over .upload-icon-wrap { background: #DBEAFE; border-color: #93C5FD; }
+    .upload-input {
+      position: absolute; inset: 0; opacity: 0;
+      cursor: pointer; width: 100%; height: 100%;
+    }
+    .upload-icon-wrap {
+      width: 52px; height: 52px;
+      background: var(--bg-app);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 16px;
+      transition: all var(--t-base);
+    }
+    .upload-icon-wrap svg { width: 22px; height: 22px; color: var(--text-secondary); }
+    .upload-title { font-size: 1rem; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+    .upload-sub   { font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 14px; }
+    .upload-pills { display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+    .upload-pill  {
+      font-size: 0.72rem; font-weight: 600;
+      color: var(--text-secondary); background: var(--bg-app);
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 2px 8px;
+    }
+
+    /* File preview row */
+    .file-preview-row {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 18px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); margin-top: 12px;
+      box-shadow: var(--shadow-sm);
+    }
+    .file-icon-wrap {
+      width: 38px; height: 38px; background: var(--primary-light);
+      border-radius: var(--radius-md);
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .file-icon-wrap svg { width: 17px; height: 17px; color: var(--primary); }
+    .file-meta { flex: 1; min-width: 0; }
+    .file-name { font-size: 0.875rem; font-weight: 600; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-size { font-size: 0.8rem; color: var(--text-secondary); }
+    .file-remove-btn {
+      width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+      border-radius: var(--radius-sm); color: var(--text-tertiary);
+      transition: all var(--t-fast); cursor: pointer; flex-shrink: 0;
+    }
+    .file-remove-btn:hover { background: var(--error-light); color: var(--error); }
+
+    /* Settings bar */
+    .parse-settings {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 16px; margin-top: 16px; flex-wrap: wrap;
+    }
+    .setting-group { display: flex; align-items: center; gap: 10px; }
+    .setting-label { font-size: 0.875rem; font-weight: 500; color: var(--text-secondary); }
+    .select-input {
+      padding: 7px 32px 7px 12px;
+      border: 1px solid var(--border); border-radius: var(--radius-md);
+      background: var(--bg-card); color: var(--text-primary);
+      font-size: 0.875rem; font-weight: 500; cursor: pointer;
+      transition: border-color var(--t-fast), box-shadow var(--t-fast);
+      appearance: none; -webkit-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2364748B' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+    }
+    .select-input:focus {
+      outline: none; border-color: var(--border-focus);
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.08);
+    }
+
+    /* ═══════════════════════════════════════════════════
+       ERROR CARD
+    ═══════════════════════════════════════════════════ */
+    .error-card {
+      display: flex; gap: 16px; align-items: flex-start;
+      background: var(--error-light); border: 1px solid #FCA5A5;
+      border-radius: var(--radius-lg); padding: 18px 20px;
+    }
+    .error-card-icon {
+      width: 30px; height: 30px; background: var(--error); border-radius: var(--radius-md);
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .error-card-icon svg { width: 15px; height: 15px; color: #fff; }
+    .error-card-title   { font-size: 0.9rem; font-weight: 600; color: var(--error); margin-bottom: 2px; }
+    .error-card-message { font-size: 0.875rem; color: #991B1B; line-height: 1.5; }
+
+    /* ═══════════════════════════════════════════════════
+       INVOICE RESULT CARDS
+    ═══════════════════════════════════════════════════ */
+    .result-stack { display: flex; flex-direction: column; gap: 16px; margin-top: 24px; }
+
+    /* Summary grid */
+    .summary-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 20px 32px;
+    }
+    .summary-field { display: flex; flex-direction: column; gap: 3px; }
+    .sf-label {
+      font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.07em;
+      text-transform: uppercase; color: var(--text-tertiary);
+    }
+    .sf-value { font-size: 0.9375rem; font-weight: 500; color: var(--text-primary); }
+    .sf-value.mono { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.875rem; }
+
+    /* Parties */
+    .parties-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .party-block {
+      background: var(--bg-app); border: 1px solid var(--border);
+      border-radius: var(--radius-md); padding: 14px 16px;
+    }
+    .party-type  { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-tertiary); margin-bottom: 6px; }
+    .party-name  { font-size: 0.9375rem; font-weight: 600; color: var(--text-primary); margin-bottom: 2px; }
+    .party-gstin { font-size: 0.8rem; font-family: 'SF Mono', 'Fira Code', monospace; color: var(--primary); }
+    .party-addr  { font-size: 0.8125rem; color: var(--text-secondary); margin-top: 4px; line-height: 1.5; }
+
+    /* Confidence */
+    .confidence-wrap { display: flex; align-items: center; gap: 12px; margin-top: 18px; }
+    .confidence-track { flex: 1; height: 5px; background: var(--border); border-radius: 100px; overflow: hidden; }
+    .confidence-fill  { height: 100%; border-radius: 100px; transition: width 0.5s ease; }
+    .confidence-fill.high   { background: var(--success); }
+    .confidence-fill.medium { background: var(--warning); }
+    .confidence-fill.low    { background: var(--error); }
+    .confidence-label { font-size: 0.8125rem; font-weight: 600; white-space: nowrap; }
+
+    /* Line items table */
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table thead tr { border-bottom: 1px solid var(--border); }
+    .data-table th {
+      text-align: left; padding: 10px 14px;
+      font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--text-tertiary);
+    }
+    .data-table th.r, .data-table td.r { text-align: right; }
+    .data-table td {
+      padding: 11px 14px; font-size: 0.875rem; color: var(--text-primary);
+      border-bottom: 1px solid var(--border);
+    }
+    .data-table tbody tr:last-child td { border-bottom: none; }
+    .data-table tbody tr:hover td     { background: var(--bg-app); }
+
+    /* Tax breakdown */
+    .tax-rows { display: flex; flex-direction: column; }
+    .tax-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 11px 0; border-bottom: 1px solid var(--border); font-size: 0.9rem;
+    }
+    .tax-row:last-child { border-bottom: none; }
+    .tax-row-label { color: var(--text-secondary); font-weight: 500; }
+    .tax-row-value { font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+    .tax-row.grand { padding-top: 16px; }
+    .tax-row.grand .tax-row-label { font-size: 1rem; font-weight: 700; color: var(--text-primary); }
+    .tax-row.grand .tax-row-value { font-size: 1.125rem; font-weight: 700; color: var(--success); }
+
+    /* Result actions */
+    .result-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+    /* JSON panel */
+    .json-panel { background: #0F172A; border-radius: var(--radius-lg); overflow: hidden; display: none; }
+    .json-panel.open { display: block; }
+    .json-panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px; background: rgba(255,255,255,0.04);
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .json-panel-label { font-size: 0.72rem; font-weight: 600; color: rgba(255,255,255,0.35); font-family: monospace; }
+    .json-panel pre {
+      padding: 18px 20px; font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 0.78rem; line-height: 1.75; color: #94A3B8;
+      overflow-x: auto; max-height: 420px;
+    }
+
+    /* ═══════════════════════════════════════════════════
+       BATCH PROCESSING
+    ═══════════════════════════════════════════════════ */
+    .file-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+
+    .batch-summary {
+      display: flex; gap: 20px;
+      padding: 16px 20px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); margin-bottom: 16px; box-shadow: var(--shadow-sm);
+      flex-wrap: wrap;
+    }
+    .batch-stat { display: flex; align-items: baseline; gap: 6px; font-size: 0.875rem; font-weight: 600; }
+    .batch-stat .num { font-size: 1.375rem; font-weight: 700; letter-spacing: -0.02em; }
+    .batch-stat.c-total   .num { color: var(--text-primary); }
+    .batch-stat.c-success .num { color: var(--success); }
+    .batch-stat.c-error   .num { color: var(--error); }
+    .batch-stat span:last-child { color: var(--text-secondary); font-weight: 500; }
+
+    /* Accordion result items */
+    .result-item {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); overflow: hidden; box-shadow: var(--shadow-sm);
+    }
+    .result-item-header {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 18px; transition: background var(--t-fast);
+    }
+    .result-item-header.clickable { cursor: pointer; }
+    .result-item-header.clickable:hover { background: var(--bg-app); }
+    .ri-filename {
+      flex: 1; font-size: 0.875rem; font-weight: 600;
+      color: var(--text-primary); min-width: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .ri-total { font-size: 0.875rem; font-weight: 600; color: var(--text-primary); }
+    .ri-chevron {
+      width: 15px; height: 15px; color: var(--text-tertiary);
+      transition: transform var(--t-base); flex-shrink: 0;
+    }
+    .result-item.open .ri-chevron { transform: rotate(180deg); }
+    .result-item-body { display: none; border-top: 1px solid var(--border); padding: 18px; }
+    .result-item.open .result-item-body { display: block; }
+
+    /* ═══════════════════════════════════════════════════
+       STATUS MODAL
+    ═══════════════════════════════════════════════════ */
+    .modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.25); z-index: 1000;
+      display: flex; align-items: flex-start; justify-content: flex-end;
+      padding: calc(var(--topnav-h) + 8px) 24px 0;
+      opacity: 0; pointer-events: none;
+      transition: opacity var(--t-base);
+    }
+    .modal-backdrop.open { opacity: 1; pointer-events: all; }
+    .status-modal {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-xl); box-shadow: var(--shadow-lg);
+      width: 320px;
+      transform: translateY(-6px);
+      transition: transform var(--t-base);
+      overflow: hidden;
+    }
+    .modal-backdrop.open .status-modal { transform: translateY(0); }
+    .modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 18px; border-bottom: 1px solid var(--border);
+    }
+    .modal-title { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); }
+    .modal-close-btn {
+      width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+      border-radius: var(--radius-sm); color: var(--text-tertiary); cursor: pointer;
+      transition: all var(--t-fast);
+    }
+    .modal-close-btn:hover { background: var(--bg-app); color: var(--text-primary); }
+    .modal-body { padding: 4px 18px 8px; }
+    .status-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 11px 0; border-bottom: 1px solid var(--border);
+    }
+    .status-row:last-child { border-bottom: none; }
+    .status-row-name { font-size: 0.875rem; font-weight: 500; color: var(--text-primary); }
+    .status-row-right { display: flex; align-items: center; gap: 6px; }
+    .sm-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
+    .sm-dot.offline  { background: var(--error); }
+    .sm-dot.checking { background: var(--warning); }
+    .sm-text { font-size: 0.8125rem; font-weight: 500; color: var(--success); }
+    .sm-text.offline  { color: var(--error); }
+    .sm-text.checking { color: var(--warning); }
+    .modal-footer {
+      padding: 10px 18px;
+      border-top: 1px solid var(--border);
+      background: var(--bg-app);
+    }
+    .modal-footer-text { font-size: 0.72rem; color: var(--text-tertiary); }
+
+    /* ═══════════════════════════════════════════════════
+       API DOCS PAGE
+    ═══════════════════════════════════════════════════ */
+    .docs-hero {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-xl); padding: 48px 40px;
+      text-align: center; box-shadow: var(--shadow-sm);
+      max-width: 540px; margin: 32px auto 0;
+    }
+    .docs-hero-icon {
+      width: 52px; height: 52px; background: var(--primary-light);
+      border-radius: var(--radius-lg);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 20px;
+    }
+    .docs-hero-icon svg { width: 22px; height: 22px; color: var(--primary); }
+    .docs-hero h2 { font-size: 1.25rem; font-weight: 700; color: var(--text-primary); margin-bottom: 8px; }
+    .docs-hero p  { font-size: 0.9375rem; color: var(--text-secondary); line-height: 1.65; margin-bottom: 24px; }
+    .docs-btn-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    .docs-divider { height: 1px; background: var(--border); margin: 24px 0; }
+
+    /* ═══════════════════════════════════════════════════
+       TOAST
+    ═══════════════════════════════════════════════════ */
+    .toast-container {
+      position: fixed; bottom: 20px; right: 20px;
+      z-index: 2000; display: flex; flex-direction: column; gap: 8px;
+    }
+    .toast {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 16px;
+      background: var(--bg-sidebar); color: #fff;
+      border-radius: var(--radius-md); font-size: 0.875rem; font-weight: 500;
+      box-shadow: var(--shadow-lg);
+      animation: toast-in 0.2s ease;
+    }
+    .toast.t-success { background: var(--success); }
+    .toast.t-error   { background: var(--error); }
+    @keyframes toast-in { from { transform: translateX(110%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* ═══════════════════════════════════════════════════
+       UTILS
+    ═══════════════════════════════════════════════════ */
+    .hidden  { display: none !important; }
+    .mt-4    { margin-top: 16px; }
+    .mt-6    { margin-top: 24px; }
+    .divider { height: 1px; background: var(--border); margin: 18px 0; }
+    .mono    { font-family: 'SF Mono', 'Fira Code', monospace; }
+
+    /* ═══════════════════════════════════════════════════
+       RESPONSIVE
+    ═══════════════════════════════════════════════════ */
+    @media (max-width: 900px) {
+      .app-shell {
+        grid-template-columns: 1fr;
+        grid-template-areas: "topnav" "main";
+      }
+      .sidebar { display: none; }
+      .main    { padding: 20px; }
+      .dash-hero { flex-direction: column; align-items: flex-start; }
+      .parties-grid, .summary-grid { grid-template-columns: 1fr; }
+      .metrics-grid { grid-template-columns: repeat(2,1fr); }
+    }
+    @media (max-width: 580px) {
+      .metrics-grid { grid-template-columns: 1fr; }
+      .parse-settings { flex-direction: column; align-items: flex-start; }
+      .result-actions { flex-direction: column; }
+      .batch-summary  { flex-direction: column; gap: 10px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="app-shell">
+
+  <!-- ══════════════════════════════════════════════
+       SIDEBAR
+  ══════════════════════════════════════════════ -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="sidebar-logo">
+        <svg viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M3 1h7l4 4v9H3V1z" stroke="white" stroke-width="1.2" stroke-linejoin="round"/>
+          <path d="M10 1v4h4" stroke="white" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M5 8h5M5 10.5h3.5" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <span class="sidebar-brand-name">GST Invoice Parser</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="sidebar-section-label">Workspace</div>
+
+      <div class="sidebar-item active" data-page="dashboard">
+        <svg viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.4">
+          <rect x="1" y="1" width="5.5" height="5.5" rx="1"/>
+          <rect x="8.5" y="1" width="5.5" height="5.5" rx="1"/>
+          <rect x="1" y="8.5" width="5.5" height="5.5" rx="1"/>
+          <rect x="8.5" y="8.5" width="5.5" height="5.5" rx="1"/>
+        </svg>
+        Dashboard
+      </div>
+
+      <div class="sidebar-item" data-page="parse">
+        <svg viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.4">
+          <path d="M3 1h7l4 4v9H3V1z" stroke-linejoin="round"/>
+          <path d="M10 1v4h4" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M7.5 6.5v5M5.5 9.5l2-3 2 3" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        Parse Invoice
+      </div>
+
+      <div class="sidebar-item" data-page="batch">
+        <svg viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.4">
+          <path d="M1 4h10l3 3v5H1V4z" stroke-linejoin="round"/>
+          <path d="M11 4V2H4v2" stroke-linecap="round"/>
+          <path d="M4 9h7M4 11h5" stroke-linecap="round"/>
+        </svg>
+        Batch Processing
+      </div>
+
+      <div class="sidebar-section-label">Resources</div>
+
+      <div class="sidebar-item" data-page="docs">
+        <svg viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.4">
+          <rect x="1" y="2" width="13" height="11" rx="1" stroke-linejoin="round"/>
+          <path d="M4 6h7M4 8.5h5M4 5h2" stroke-linecap="round"/>
+        </svg>
+        API Documentation
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <a href="https://github.com/ayushfront/gst-invoice-parser" target="_blank" class="sidebar-footer-link">
+        <svg viewBox="0 0 15 15" fill="currentColor">
+          <path d="M7.5 1a6.5 6.5 0 100 13A6.5 6.5 0 007.5 1zm0 1.3A5.2 5.2 0 0112.5 8.8a3.4 3.4 0 01-1.85-.75c-.1-.75-.47-1.13-.93-1.4 1.4-.18 2.8-.65 2.8-2.97a2.3 2.3 0 00-.57-1.6c.05-.2.25-.85-.05-1.7 0 0-.5-.17-1.6.65a5.2 5.2 0 00-2.8 0C6.4 2.2 5.9 2.38 5.9 2.38c-.3.85-.1 1.5-.05 1.7a2.3 2.3 0 00-.56 1.6c0 2.32 1.4 2.79 2.79 2.97-.29.2-.46.66-.52 1.03-.47.2-1.67.55-2.43-.66 0 0-.44-.75-1.22-.81 0 0-.77 0 0 .47 0 0 .52.25.88 1.2 0 0 .47 1.59 2.8 1.03v1.2a.65.65 0 001.3 0V11.1a.65.65 0 00-.38-.57z"/>
+        </svg>
+        GitHub
+      </a>
+    </div>
+  </aside>
+
+  <!-- ══════════════════════════════════════════════
+       TOP NAV
+  ══════════════════════════════════════════════ -->
+  <header class="topnav">
+    <span class="topnav-title" id="topnav-title">Dashboard</span>
+    <div class="topnav-spacer"></div>
+    <div class="topnav-actions">
+      <a href="/docs" target="_blank" class="topnav-link">
+        <svg width="13" height="13" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M6 2H2v11h11V9M9 1h5v5M14 1L7 8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        API Docs
+      </a>
+      <button class="status-indicator" id="status-btn" aria-label="System status">
+        <span class="status-dot checking" id="status-dot"></span>
+        <span id="status-label">Checking…</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ══════════════════════════════════════════════
+       MAIN
+  ══════════════════════════════════════════════ -->
+  <main class="main">
+    <div class="content-wrap">
+
+      <!-- ────── DASHBOARD ────────────────────────── -->
+      <section class="page active" id="page-dashboard">
+
+        <div class="dash-hero">
+          <div class="dash-hero-text">
+            <h2>GST Invoice Parser</h2>
+            <p>AI-powered invoice intelligence for Indian businesses. Extract structured JSON from any GST invoice in seconds.</p>
+          </div>
+          <div class="dash-hero-actions">
+            <button class="btn btn-secondary" data-page="docs">
+              <svg width="13" height="13" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="1" y="2" width="13" height="11" rx="1"/>
+                <path d="M4 6h7M4 8.5h5" stroke-linecap="round"/>
+              </svg>
+              API Docs
+            </button>
+            <button class="btn btn-primary" data-page="parse">
+              <svg width="13" height="13" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M7.5 2v11M2 7.5h11" stroke-linecap="round"/>
+              </svg>
+              Parse Invoice
+            </button>
+          </div>
+        </div>
+
+        <div class="section-label">Today's Activity</div>
+        <div id="dash-metrics">
+          <div class="metrics-grid">
+            <div class="skeleton sk-metric"></div>
+            <div class="skeleton sk-metric"></div>
+            <div class="skeleton sk-metric"></div>
+            <div class="skeleton sk-metric"></div>
+            <div class="skeleton sk-metric"></div>
+          </div>
+        </div>
+
+        <div class="section-label mt-6">About this API</div>
+        <div class="product-info-grid">
+          <div class="product-info-item">
+            <div class="product-info-label">API Version</div>
+            <div class="product-info-value">v1.0.0</div>
+          </div>
+          <div class="product-info-item">
+            <div class="product-info-label">Supported Formats</div>
+            <div class="product-info-value">PDF, JPG, PNG</div>
+          </div>
+          <div class="product-info-item">
+            <div class="product-info-label">AI Engine</div>
+            <div class="product-info-value">Google Gemini</div>
+          </div>
+          <div class="product-info-item">
+            <div class="product-info-label">Output Format</div>
+            <div class="product-info-value">Structured JSON</div>
+          </div>
+          <div class="product-info-item">
+            <div class="product-info-label">Languages</div>
+            <div class="product-info-value">English, Hindi</div>
+          </div>
+          <div class="product-info-item">
+            <div class="product-info-label">Processing</div>
+            <div class="product-info-value">In-memory, stateless</div>
+          </div>
+        </div>
+
+      </section>
+
+      <!-- ────── PARSE INVOICE ─────────────────────── -->
+      <section class="page" id="page-parse">
+        <div class="page-header">
+          <h1>Parse Invoice</h1>
+          <p>Upload a GST invoice and extract structured data using AI.</p>
+        </div>
+
+        <div class="upload-zone" id="parse-drop-zone">
+          <input type="file" class="upload-input" id="parse-file-input" accept=".pdf,.jpg,.jpeg,.png">
+          <div class="upload-icon-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="upload-title">Drag &amp; drop your invoice</div>
+          <div class="upload-sub">or click anywhere to browse</div>
+          <div class="upload-pills">
+            <span class="upload-pill">PDF</span>
+            <span class="upload-pill">JPG</span>
+            <span class="upload-pill">PNG</span>
+            <span class="upload-pill">Max 10 MB</span>
+          </div>
+        </div>
+
+        <div id="parse-file-preview" class="hidden"></div>
+
+        <div class="parse-settings">
+          <div class="setting-group">
+            <label class="setting-label" for="parse-lang">Language</label>
+            <select class="select-input" id="parse-lang">
+              <option value="en">English</option>
+              <option value="hi">Hindi / हिन्दी</option>
+            </select>
+          </div>
+          <button class="btn btn-primary btn-lg" id="parse-btn" disabled>Parse Invoice</button>
+        </div>
+
+        <!-- Loading skeleton -->
+        <div id="parse-loading" class="hidden">
+          <div class="card mt-4">
+            <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px">
+              <div class="spinner dark"></div>
+              <span style="font-size:0.875rem;color:var(--text-secondary)">Extracting invoice data with AI — this takes 15–30 seconds…</span>
+            </div>
+            <div class="skeleton sk-text" style="width:60%;margin-bottom:10px;height:16px"></div>
+            <div class="skeleton sk-text" style="width:45%;margin-bottom:20px"></div>
+            <div class="skeleton sk-row" style="margin-bottom:8px"></div>
+            <div class="skeleton sk-row" style="margin-bottom:8px"></div>
+            <div class="skeleton sk-row"></div>
+          </div>
+        </div>
+
+        <div id="parse-error"  class="hidden mt-4"></div>
+        <div id="parse-result" class="hidden"></div>
+      </section>
+
+      <!-- ────── BATCH PROCESSING ──────────────────── -->
+      <section class="page" id="page-batch">
+        <div class="page-header">
+          <h1>Batch Processing</h1>
+          <p>Upload multiple invoices and process them in a single request.</p>
+        </div>
+
+        <div class="upload-zone" id="batch-drop-zone">
+          <input type="file" class="upload-input" id="batch-file-input" accept=".pdf,.jpg,.jpeg,.png" multiple>
+          <div class="upload-icon-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div class="upload-title">Drop multiple invoices here</div>
+          <div class="upload-sub">or click to select files</div>
+          <div class="upload-pills">
+            <span class="upload-pill">PDF</span>
+            <span class="upload-pill">JPG</span>
+            <span class="upload-pill">PNG</span>
+            <span class="upload-pill">Multiple files</span>
+          </div>
+        </div>
+
+        <div id="batch-file-list" class="file-list hidden"></div>
+
+        <div class="parse-settings">
+          <div class="setting-group">
+            <label class="setting-label" for="batch-lang">Language</label>
+            <select class="select-input" id="batch-lang">
+              <option value="en">English</option>
+              <option value="hi">Hindi / हिन्दी</option>
+            </select>
+          </div>
+          <button class="btn btn-primary btn-lg" id="batch-btn" disabled>Process Invoices</button>
+        </div>
+
+        <div id="batch-loading" class="hidden" style="align-items:center;gap:12px;padding:18px 0;color:var(--text-secondary);font-size:0.875rem;">
+          <div class="spinner dark"></div>
+          <span id="batch-loading-msg">Processing invoices…</span>
+        </div>
+
+        <div id="batch-results" class="hidden mt-4"></div>
+      </section>
+
+      <!-- ────── API DOCS ───────────────────────────── -->
+      <section class="page" id="page-docs">
+        <div class="page-header">
+          <h1>API Documentation</h1>
+          <p>Interactive documentation for all endpoints.</p>
+        </div>
+
+        <div class="docs-hero">
+          <div class="docs-hero-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke-linejoin="round"/>
+              <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h2>Interactive API Reference</h2>
+          <p>Explore all endpoints, test requests live, and view real response schemas in the Swagger UI.</p>
+          <div class="docs-btn-row">
+            <a href="/docs" target="_blank" class="btn btn-primary">
+              <svg width="13" height="13" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M6 2H2v11h11V9M9 1h5v5M14 1L7 8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              Open Swagger UI
+            </a>
+            <a href="/openapi.json" target="_blank" class="btn btn-secondary">OpenAPI Schema</a>
+          </div>
+
+          <div class="docs-divider"></div>
+
+          <div style="text-align:left">
+            <div class="section-label" style="margin-top:0">Endpoints</div>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Method</th>
+                  <th>Path</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="badge badge-blue">POST</span></td>
+                  <td class="mono" style="font-size:0.8rem">/parse</td>
+                  <td style="color:var(--text-secondary)">Parse a single GST invoice</td>
+                </tr>
+                <tr>
+                  <td><span class="badge badge-blue">POST</span></td>
+                  <td class="mono" style="font-size:0.8rem">/parse/bulk</td>
+                  <td style="color:var(--text-secondary)">Parse multiple invoices</td>
+                </tr>
+                <tr>
+                  <td><span class="badge badge-green">GET</span></td>
+                  <td class="mono" style="font-size:0.8rem">/health</td>
+                  <td style="color:var(--text-secondary)">Health check &amp; version</td>
+                </tr>
+                <tr>
+                  <td><span class="badge badge-green">GET</span></td>
+                  <td class="mono" style="font-size:0.8rem">/dashboard</td>
+                  <td style="color:var(--text-secondary)">Usage analytics</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </div><!-- /content-wrap -->
+  </main>
+
+</div><!-- /app-shell -->
+
+<!-- ══════════════════════════════════════════════
+     STATUS MODAL
+══════════════════════════════════════════════ -->
+<div class="modal-backdrop" id="status-backdrop">
+  <div class="status-modal">
+    <div class="modal-header">
+      <span class="modal-title">System Status</span>
+      <button class="modal-close-btn" id="modal-close">
+        <svg width="13" height="13" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M1 1l13 13M14 1L1 14" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body" id="status-modal-body">
+      <div class="status-row">
+        <span class="status-row-name">API Server</span>
+        <div class="status-row-right">
+          <span class="sm-dot checking"></span>
+          <span class="sm-text checking">Checking…</span>
+        </div>
+      </div>
+      <div class="status-row">
+        <span class="status-row-name">AI Engine</span>
+        <div class="status-row-right">
+          <span class="sm-dot checking"></span>
+          <span class="sm-text checking">Checking…</span>
+        </div>
+      </div>
+      <div class="status-row">
+        <span class="status-row-name">Database</span>
+        <div class="status-row-right">
+          <span class="sm-dot checking"></span>
+          <span class="sm-text checking">Checking…</span>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <span class="modal-footer-text" id="modal-last-checked">Last checked: –</span>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toast-container"></div>
+
+<script>
+/* ══════════════════════════════════════════════════════
+   API SERVICE LAYER
+   All network calls isolated here.
+══════════════════════════════════════════════════════ */
+const API = {
+  async health() {
+    const r = await fetch('/health');
+    if (!r.ok) throw new Error('health failed');
+    return r.json();
+  },
+  async dashboard() {
+    const r = await fetch('/dashboard');
+    if (!r.ok) throw new Error('dashboard failed');
+    return r.json();
+  },
+  async parse(file, language) {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('language', language);
+    const r = await fetch('/parse', { method: 'POST', body: fd });
+    return r.json();
+  },
+  async parseBulk(files, language) {
+    const fd = new FormData();
+    files.forEach(f => fd.append('files', f));
+    fd.append('language', language);
+    const r = await fetch('/parse/bulk', { method: 'POST', body: fd });
+    return r.json();
+  },
+};
+
+/* ══════════════════════════════════════════════════════
+   STATE
+══════════════════════════════════════════════════════ */
+const State = {
+  page:            'dashboard',
+  parseFile:       null,
+  batchFiles:      [],
+  healthLastCheck: null,
+};
+
+/* ══════════════════════════════════════════════════════
+   UTILS
+══════════════════════════════════════════════════════ */
+function fmtNum(n)       { return (n == null) ? '—' : Number(n).toLocaleString('en-IN'); }
+function fmtINR(n, d=2)  { return (n == null) ? '—' : '₹' + Number(n).toLocaleString('en-IN', {minimumFractionDigits:d,maximumFractionDigits:d}); }
+function fmtUSD(n)       { return (n == null || n === 0) ? '$0.000000' : '$' + Number(n).toFixed(6); }
+function fmtBytes(b)     { return b < 1024 ? b+' B' : b < 1048576 ? (b/1024).toFixed(1)+' KB' : (b/1048576).toFixed(1)+' MB'; }
+function fmtAgo(d)       {
+  if (!d) return '–';
+  const s = Math.floor((Date.now()-d)/1000);
+  if (s < 5)   return 'just now';
+  if (s < 60)  return s + 's ago';
+  return Math.floor(s/60) + 'm ago';
+}
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toast(msg, type='') {
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className = 'toast' + (type ? ' t-'+type : '');
+  t.textContent = msg;
+  c.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+/* ══════════════════════════════════════════════════════
+   ROUTER
+══════════════════════════════════════════════════════ */
+const PAGE_NAMES = { dashboard:'Dashboard', parse:'Parse Invoice', batch:'Batch Processing', docs:'API Documentation' };
+
+function navigate(page) {
+  if (!PAGE_NAMES[page]) return;
+  State.page = page;
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  const el = document.getElementById('page-' + page);
+  if (el) el.classList.add('active');
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.toggle('active', i.dataset.page === page));
+  document.getElementById('topnav-title').textContent = PAGE_NAMES[page];
+  if (page === 'dashboard') loadDashboard();
+}
+
+/* ══════════════════════════════════════════════════════
+   HEALTH CHECK & STATUS MODAL
+══════════════════════════════════════════════════════ */
+async function checkHealth() {
+  const dot   = document.getElementById('status-dot');
+  const label = document.getElementById('status-label');
+  dot.className   = 'status-dot checking';
+  label.textContent = 'Checking…';
+
+  try {
+    const data = await API.health();
+    State.healthLastCheck = Date.now();
+    dot.className   = 'status-dot';
+    label.textContent = 'All Systems Operational';
+    renderStatusModal(true, data.version || '1.0.0');
+  } catch {
+    State.healthLastCheck = Date.now();
+    dot.className   = 'status-dot error';
+    label.textContent = 'Service Unavailable';
+    renderStatusModal(false, null);
+  }
+  updateLastChecked();
+}
+
+function renderStatusModal(online, version) {
+  const rows = [
+    { name: 'API Server', ok: online, detail: online ? (version ? 'v' + version : 'Online') : 'Offline' },
+    { name: 'AI Engine',  ok: online, detail: online ? 'Google Gemini' : 'Unavailable' },
+    { name: 'Database',   ok: online, detail: online ? 'Connected' : 'Unavailable' },
+  ];
+  document.getElementById('status-modal-body').innerHTML = rows.map(r => `
+    <div class="status-row">
+      <span class="status-row-name">${r.name}</span>
+      <div class="status-row-right">
+        <span class="sm-dot ${r.ok?'':'offline'}"></span>
+        <span class="sm-text ${r.ok?'':'offline'}">${esc(r.detail)}</span>
+      </div>
+    </div>`).join('');
+}
+
+function updateLastChecked() {
+  const el = document.getElementById('modal-last-checked');
+  if (el) el.textContent = 'Last checked: ' + fmtAgo(State.healthLastCheck);
+}
+
+function initStatusModal() {
+  const backdrop = document.getElementById('status-backdrop');
+  document.getElementById('status-btn').addEventListener('click', () => {
+    const open = backdrop.classList.toggle('open');
+    if (open) { checkHealth(); }
+  });
+  document.getElementById('modal-close').addEventListener('click', () => backdrop.classList.remove('open'));
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) backdrop.classList.remove('open'); });
+}
+
+/* ══════════════════════════════════════════════════════
+   DASHBOARD PAGE
+══════════════════════════════════════════════════════ */
+async function loadDashboard() {
+  const container = document.getElementById('dash-metrics');
+  container.innerHTML = `<div class="metrics-grid">${Array(5).fill('<div class="skeleton sk-metric"></div>').join('')}</div>`;
+  try {
+    const data = await API.dashboard();
+    renderMetrics(data);
+  } catch {
+    container.innerHTML = `
+      <div class="error-card">
+        <div class="error-card-icon">
+          <svg viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7.5" cy="7.5" r="6"/><path d="M7.5 4.5v3M7.5 10v.5" stroke-linecap="round"/></svg>
+        </div>
+        <div>
+          <div class="error-card-title">Could not load analytics</div>
+          <div class="error-card-message">Unable to reach /dashboard. Check the server is running.</div>
+        </div>
+      </div>`;
+  }
+}
+
+function renderMetrics(data) {
+  const container  = document.getElementById('dash-metrics');
+  const total      = data.total_calls || 0;
+  const successful = data.successful_calls || 0;
+  const failed     = total - successful;
+  const rate       = total > 0 ? ((successful / total) * 100).toFixed(1) : null;
+  const cost       = data.total_cost_usd;
+
+  if (total === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:22px;height:22px;color:var(--primary)">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke-linejoin="round"/>
+            <path d="M14 2v6h6M8 13h8M8 17h5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h3 class="empty-title">No invoices processed yet</h3>
+        <p class="empty-desc">Upload your first GST invoice and extract structured JSON using AI.</p>
+        <button class="btn btn-primary" id="empty-cta">Parse First Invoice</button>
+      </div>`;
+    document.getElementById('empty-cta').addEventListener('click', () => navigate('parse'));
+    return;
+  }
+
+  const rateClass = rate >= 90 ? 'c-success' : rate >= 70 ? '' : 'c-error';
+  container.innerHTML = `
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-label">Total Invoices</div>
+        <div class="metric-value">${fmtNum(total)}</div>
+        <div class="metric-sub">Processed today</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Successful</div>
+        <div class="metric-value c-success">${fmtNum(successful)}</div>
+        <div class="metric-sub">Parsed without error</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Failed</div>
+        <div class="metric-value ${failed > 0 ? 'c-error' : ''}">${fmtNum(failed)}</div>
+        <div class="metric-sub">Extraction errors</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Success Rate</div>
+        <div class="metric-value ${rateClass}">${rate !== null ? rate + '%' : '—'}</div>
+        <div class="metric-sub">Last 24 hours</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">AI Processing Cost</div>
+        <div class="metric-value" style="font-size:1.375rem">${fmtUSD(cost)}</div>
+        <div class="metric-sub">Estimated today</div>
+      </div>
+    </div>`;
+}
+
+/* ══════════════════════════════════════════════════════
+   PARSE INVOICE PAGE
+══════════════════════════════════════════════════════ */
+function fileIconHTML() {
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke-linejoin="round"/><path d="M14 2v6h6" stroke-linecap="round"/></svg>`;
+}
+
+function renderFilePreviewRow(file, removeId) {
+  return `
+    <div class="file-preview-row">
+      <div class="file-icon-wrap">${fileIconHTML()}</div>
+      <div class="file-meta">
+        <div class="file-name">${esc(file.name)}</div>
+        <div class="file-size">${fmtBytes(file.size)}</div>
+      </div>
+      <button class="file-remove-btn" id="${removeId}" title="Remove file">
+        <svg width="13" height="13" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M1 1l13 13M14 1L1 14" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>`;
+}
+
+function initParseUpload() {
+  const zone  = document.getElementById('parse-drop-zone');
+  const input = document.getElementById('parse-file-input');
+  const btn   = document.getElementById('parse-btn');
+
+  zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag-over');
+    const f = e.dataTransfer.files[0];
+    if (f) setParseFile(f);
+  });
+  input.addEventListener('change', () => { if (input.files[0]) setParseFile(input.files[0]); });
+  btn.addEventListener('click', runParse);
+}
+
+function setParseFile(file) {
+  State.parseFile = file;
+  const preview = document.getElementById('parse-file-preview');
+  preview.classList.remove('hidden');
+  preview.innerHTML = renderFilePreviewRow(file, 'parse-remove-btn');
+  document.getElementById('parse-remove-btn').addEventListener('click', clearParseFile);
+  document.getElementById('parse-btn').disabled = false;
+  document.getElementById('parse-result').classList.add('hidden');
+  document.getElementById('parse-error').classList.add('hidden');
+}
+
+function clearParseFile() {
+  State.parseFile = null;
+  document.getElementById('parse-file-preview').classList.add('hidden');
+  document.getElementById('parse-btn').disabled = true;
+  document.getElementById('parse-file-input').value = '';
+}
+
+async function runParse() {
+  if (!State.parseFile) return;
+  const language = document.getElementById('parse-lang').value;
+  const btn      = document.getElementById('parse-btn');
+  const loading  = document.getElementById('parse-loading');
+  const errEl    = document.getElementById('parse-error');
+  const resultEl = document.getElementById('parse-result');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Parsing…';
+  loading.classList.remove('hidden');
+  errEl.classList.add('hidden');
+  resultEl.classList.add('hidden');
+
+  try {
+    const data = await API.parse(State.parseFile, language);
+    loading.classList.add('hidden');
+    btn.disabled = false;
+    btn.innerHTML = 'Parse Invoice';
+    if (data.success) {
+      renderParseResult(data.data, resultEl);
+      resultEl.classList.remove('hidden');
+    } else {
+      renderParseError(data.error || {}, errEl);
+      errEl.classList.remove('hidden');
+    }
+  } catch {
+    loading.classList.add('hidden');
+    btn.disabled = false;
+    btn.innerHTML = 'Parse Invoice';
+    renderParseError({ code: 'NETWORK_ERROR', message: 'Could not reach the API. Check the server is running.' }, errEl);
+    errEl.classList.remove('hidden');
+  }
+}
+
+function renderParseError(err, container) {
+  container.innerHTML = `
+    <div class="error-card">
+      <div class="error-card-icon">
+        <svg viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7.5" cy="7.5" r="6"/><path d="M7.5 4.5v3M7.5 10v.5" stroke-linecap="round"/></svg>
+      </div>
+      <div>
+        <div class="error-card-title">${esc(err.code || 'Error')}</div>
+        <div class="error-card-message">${esc(err.message || 'An unexpected error occurred.')}</div>
+        ${err.detail ? `<div class="error-card-message" style="margin-top:4px;opacity:.7">${esc(err.detail)}</div>` : ''}
+      </div>
+    </div>
+    <div style="margin-top:14px">
+      <button class="btn btn-secondary" id="parse-retry">Try Again</button>
+    </div>`;
+  document.getElementById('parse-retry').addEventListener('click', () => {
+    clearParseFile();
+    container.classList.add('hidden');
+  });
+}
+
+function renderParseResult(inv, container) {
+  const meta   = inv.meta || {};
+  const seller = inv.seller || {};
+  const buyer  = inv.buyer  || {};
+  const tax    = inv.tax_summary || {};
+  const items  = inv.line_items  || [];
+
+  /* Confidence — only render if returned by API */
+  let confidenceHTML = '';
+  const score = meta.confidence_score;
+  if (score !== null && score !== undefined) {
+    const pct = Math.round(score * 100);
+    const cls = score >= 0.8 ? 'high' : score >= 0.7 ? 'medium' : 'low';
+    const lbl = score >= 0.8 ? 'High confidence' : score >= 0.7 ? 'Medium — verify key fields' : 'Low — verify manually';
+    confidenceHTML = `
+      <div style="margin-top:18px">
+        <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-tertiary);margin-bottom:8px">Confidence</div>
+        <div class="confidence-wrap">
+          <div class="confidence-track"><div class="confidence-fill ${cls}" style="width:${pct}%"></div></div>
+          <span class="confidence-label" style="color:var(${cls==='high'?'--success':cls==='medium'?'--warning':'--error'})">${pct}% — ${lbl}</span>
+        </div>
+      </div>`;
+  }
+
+  /* Warning banner */
+  const warnHTML = meta.warning
+    ? `<div style="margin-top:14px;padding:10px 14px;background:var(--warning-light);border:1px solid #FDE68A;border-radius:var(--radius-md);font-size:.8125rem;color:var(--warning)">${esc(meta.warning)}</div>`
+    : '';
+
+  /* Line items */
+  const itemsHTML = items.length === 0
+    ? '<p style="font-size:.875rem;color:var(--text-tertiary)">No line items extracted.</p>'
+    : `<table class="data-table">
+        <thead><tr>
+          <th>Description</th><th>HSN/SAC</th><th>Qty</th>
+          <th class="r">Unit Price</th><th class="r">Taxable</th>
+          <th class="r">Tax</th><th class="r">Total</th>
+        </tr></thead>
+        <tbody>
+          ${items.map(it => {
+            const taxLbl = it.igst_rate != null
+              ? `IGST ${it.igst_rate}%`
+              : (it.cgst_rate != null ? `CGST ${it.cgst_rate}% + SGST ${it.sgst_rate}%` : '—');
+            const taxAmt = (it.igst_amount != null) ? it.igst_amount : (((it.cgst_amount||0) + (it.sgst_amount||0)) || null);
+            return `<tr>
+              <td>${esc(it.description||'—')}</td>
+              <td class="mono" style="font-size:.8rem">${esc(it.hsn_sac_code||'—')}</td>
+              <td>${esc(it.quantity??'—')} ${esc(it.unit||'')}</td>
+              <td class="r">${fmtINR(it.unit_price)}</td>
+              <td class="r">${fmtINR(it.taxable_amount)}</td>
+              <td class="r" style="font-size:.8rem;color:var(--text-secondary)">${esc(taxLbl)}${taxAmt!=null?'<br>'+fmtINR(taxAmt):''}</td>
+              <td class="r" style="font-weight:600">${fmtINR(it.total_amount)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+
+  /* Tax rows — only non-null fields */
+  const taxFields = [
+    ['Subtotal',  tax.subtotal],
+    ['CGST',      tax.total_cgst],
+    ['SGST',      tax.total_sgst],
+    ['IGST',      tax.total_igst],
+    ['Cess',      tax.total_cess],
+    ['Round Off', tax.round_off],
+  ].filter(([, v]) => v !== null && v !== undefined);
+
+  const taxHTML = taxFields.map(([l,v]) => `
+    <div class="tax-row">
+      <span class="tax-row-label">${l}</span>
+      <span class="tax-row-value">${fmtINR(v)}</span>
+    </div>`).join('') + `
+    <div class="tax-row grand">
+      <span class="tax-row-label">Grand Total</span>
+      <span class="tax-row-value">${fmtINR(tax.grand_total)}</span>
+    </div>`;
+
+  const rawJSON = JSON.stringify(inv, null, 2);
+
+  container.innerHTML = `
+    <div class="result-stack">
+
+      <!-- Invoice Summary -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">Invoice Summary</div>
+            ${inv.invoice_type ? `<div class="card-subtitle">${esc(inv.invoice_type)}</div>` : ''}
+          </div>
+          <span class="badge badge-success">Parsed</span>
+        </div>
+        <div class="summary-grid">
+          <div class="summary-field">
+            <span class="sf-label">Invoice Number</span>
+            <span class="sf-value mono">${esc(inv.invoice_number||'—')}</span>
+          </div>
+          <div class="summary-field">
+            <span class="sf-label">Invoice Date</span>
+            <span class="sf-value">${esc(inv.invoice_date||'—')}</span>
+          </div>
+          <div class="summary-field">
+            <span class="sf-label">Extraction Time</span>
+            <span class="sf-value">${meta.extraction_time_ms!=null ? meta.extraction_time_ms+' ms' : '—'}</span>
+          </div>
+          <div class="summary-field">
+            <span class="sf-label">Pages Processed</span>
+            <span class="sf-value">${meta.pages_processed??'—'}</span>
+          </div>
+        </div>
+        ${confidenceHTML}
+        ${warnHTML}
+      </div>
+
+      <!-- Parties -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">Seller &amp; Buyer</div></div>
+        <div class="parties-grid">
+          <div class="party-block">
+            <div class="party-type">Seller</div>
+            <div class="party-name">${esc(seller.name||'—')}</div>
+            ${seller.gstin  ? `<div class="party-gstin">${esc(seller.gstin)}</div>` : ''}
+            ${seller.address? `<div class="party-addr">${esc(seller.address)}</div>` : ''}
+          </div>
+          <div class="party-block">
+            <div class="party-type">Buyer</div>
+            <div class="party-name">${esc(buyer.name||'—')}</div>
+            ${buyer.gstin  ? `<div class="party-gstin">${esc(buyer.gstin)}</div>` : ''}
+            ${buyer.address? `<div class="party-addr">${esc(buyer.address)}</div>` : ''}
+          </div>
+        </div>
+      </div>
+
+      <!-- Line Items -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Line Items</div>
+          <span class="badge badge-neutral">${items.length} item${items.length!==1?'s':''}</span>
+        </div>
+        ${itemsHTML}
+      </div>
+
+      <!-- Tax Breakdown -->
+      <div class="card">
+        <div class="card-header"><div class="card-title">Tax Breakdown</div></div>
+        <div class="tax-rows">${taxHTML}</div>
+        ${tax.amount_in_words ? `<p style="font-size:.8125rem;color:var(--text-secondary);margin-top:14px;font-style:italic">${esc(tax.amount_in_words)}</p>` : ''}
+      </div>
+
+      <!-- Actions -->
+      <div class="result-actions">
+        <button class="btn btn-secondary btn-sm" id="toggle-json">View Raw JSON</button>
+        <button class="btn btn-secondary btn-sm" id="copy-json">Copy JSON</button>
+        <button class="btn btn-secondary btn-sm" id="dl-json">Download JSON</button>
+        <button class="btn btn-ghost btn-sm"      id="parse-again">Parse Another</button>
+      </div>
+
+      <!-- JSON panel -->
+      <div class="json-panel" id="json-panel">
+        <div class="json-panel-header">
+          <span class="json-panel-label">response.json</span>
+        </div>
+        <pre id="json-content"></pre>
+      </div>
+
+    </div>`;
+
+  document.getElementById('json-content').textContent = rawJSON;
+
+  document.getElementById('toggle-json').addEventListener('click', function() {
+    const panel = document.getElementById('json-panel');
+    const open  = panel.classList.toggle('open');
+    this.textContent = open ? 'Hide Raw JSON' : 'View Raw JSON';
+  });
+
+  document.getElementById('copy-json').addEventListener('click', () => {
+    navigator.clipboard.writeText(rawJSON).then(() => toast('JSON copied to clipboard', 'success'));
+  });
+
+  document.getElementById('dl-json').addEventListener('click', () => {
+    const blob = new Blob([rawJSON], { type: 'application/json' });
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement('a'), { href: url, download: (inv.invoice_number || 'invoice') + '.json' });
+    a.click(); URL.revokeObjectURL(url);
+    toast('JSON downloaded', 'success');
+  });
+
+  document.getElementById('parse-again').addEventListener('click', () => {
+    clearParseFile();
+    container.classList.add('hidden');
+    document.getElementById('parse-error').classList.add('hidden');
+  });
+}
+
+/* ══════════════════════════════════════════════════════
+   BATCH PROCESSING PAGE
+══════════════════════════════════════════════════════ */
+function initBatchUpload() {
+  const zone  = document.getElementById('batch-drop-zone');
+  const input = document.getElementById('batch-file-input');
+
+  zone.addEventListener('dragover',  e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag-over');
+    addBatchFiles([...e.dataTransfer.files]);
+  });
+  input.addEventListener('change', () => addBatchFiles([...input.files]));
+  document.getElementById('batch-btn').addEventListener('click', runBatch);
+}
+
+function addBatchFiles(newFiles) {
+  newFiles.forEach(f => {
+    const dup = State.batchFiles.find(x => x.name === f.name && x.size === f.size);
+    if (!dup) State.batchFiles.push(f);
+  });
+  renderBatchFileList();
+}
+
+function renderBatchFileList() {
+  const list = document.getElementById('batch-file-list');
+  const btn  = document.getElementById('batch-btn');
+  const n    = State.batchFiles.length;
+  btn.disabled   = n === 0;
+  btn.textContent = n > 0 ? `Process ${n} Invoice${n!==1?'s':''}` : 'Process Invoices';
+
+  if (n === 0) { list.classList.add('hidden'); return; }
+  list.classList.remove('hidden');
+  list.innerHTML = State.batchFiles.map((f, i) => `
+    <div class="file-preview-row">
+      <div class="file-icon-wrap">${fileIconHTML()}</div>
+      <div class="file-meta">
+        <div class="file-name">${esc(f.name)}</div>
+        <div class="file-size">${fmtBytes(f.size)}</div>
+      </div>
+      <button class="file-remove-btn batch-rm" data-i="${i}" title="Remove">
+        <svg width="13" height="13" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M1 1l13 13M14 1L1 14" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>`).join('');
+
+  list.querySelectorAll('.batch-rm').forEach(b => {
+    b.addEventListener('click', () => {
+      State.batchFiles.splice(Number(b.dataset.i), 1);
+      renderBatchFileList();
+    });
+  });
+}
+
+async function runBatch() {
+  if (!State.batchFiles.length) return;
+  const language  = document.getElementById('batch-lang').value;
+  const btn       = document.getElementById('batch-btn');
+  const loadEl    = document.getElementById('batch-loading');
+  const loadMsg   = document.getElementById('batch-loading-msg');
+  const resultsEl = document.getElementById('batch-results');
+  const n         = State.batchFiles.length;
+
+  btn.disabled    = true;
+  btn.innerHTML   = '<span class="spinner"></span> Processing…';
+  loadEl.classList.remove('hidden');
+  loadEl.style.display = 'flex';
+  loadMsg.textContent  = `Processing ${n} invoice${n!==1?'s':''}…`;
+  resultsEl.classList.add('hidden');
+
+  try {
+    const data = await API.parseBulk(State.batchFiles, language);
+    loadEl.classList.add('hidden');
+    btn.disabled   = false;
+    btn.textContent = `Process ${n} Invoice${n!==1?'s':''}`;
+    renderBatchResults(data, resultsEl);
+    resultsEl.classList.remove('hidden');
+  } catch {
+    loadEl.classList.add('hidden');
+    btn.disabled   = false;
+    btn.textContent = `Process ${n} Invoice${n!==1?'s':''}`;
+    resultsEl.innerHTML = `
+      <div class="error-card">
+        <div class="error-card-icon"><svg viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7.5" cy="7.5" r="6"/><path d="M7.5 4.5v3M7.5 10v.5" stroke-linecap="round"/></svg></div>
+        <div><div class="error-card-title">Network Error</div><div class="error-card-message">Could not reach the API.</div></div>
+      </div>`;
+    resultsEl.classList.remove('hidden');
+  }
+}
+
+function renderBatchResults(data, el) {
+  const results = data.results || [];
+  el.innerHTML = `
+    <div class="batch-summary">
+      <div class="batch-stat c-total">  <span class="num">${data.total||0}</span>      <span>Total</span></div>
+      <div class="batch-stat c-success"><span class="num">${data.successful||0}</span> <span>Successful</span></div>
+      <div class="batch-stat c-error">  <span class="num">${data.failed||0}</span>     <span>Failed</span></div>
+    </div>
+    <div id="batch-items"></div>`;
+
+  const container = el.querySelector('#batch-items');
+
+  results.forEach(r => {
+    const item = document.createElement('div');
+    item.className = 'result-item';
+    const inv  = r.data || {};
+    const tax  = inv.tax_summary || {};
+    const err  = r.error || {};
+
+    if (r.success) {
+      const total = tax.grand_total;
+      item.innerHTML = `
+        <div class="result-item-header clickable">
+          <div class="ri-filename">${esc(r.filename)}</div>
+          <span class="badge badge-success">Completed</span>
+          ${total!=null ? `<span class="ri-total">${fmtINR(total)}</span>` : ''}
+          <svg class="ri-chevron" viewBox="0 0 15 15" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M3 5l4.5 5 4.5-5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="result-item-body">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px 24px;margin-bottom:16px">
+            <div class="summary-field">
+              <span class="sf-label">Invoice No.</span>
+              <span class="sf-value mono">${esc(inv.invoice_number||'—')}</span>
+            </div>
+            <div class="summary-field">
+              <span class="sf-label">Date</span>
+              <span class="sf-value">${esc(inv.invoice_date||'—')}</span>
+            </div>
+            <div class="summary-field">
+              <span class="sf-label">Seller</span>
+              <span class="sf-value">${esc((inv.seller||{}).name||'—')}</span>
+            </div>
+            <div class="summary-field">
+              <span class="sf-label">Grand Total</span>
+              <span class="sf-value">${fmtINR(total)}</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary btn-sm b-copy">Copy JSON</button>
+            <button class="btn btn-secondary btn-sm b-dl">Download JSON</button>
+          </div>
+        </div>`;
+
+      item.querySelector('.result-item-header').addEventListener('click', () => item.classList.toggle('open'));
+
+      const raw = JSON.stringify(inv, null, 2);
+      item.querySelector('.b-copy').addEventListener('click', e => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(raw).then(() => toast('JSON copied', 'success'));
+      });
+      item.querySelector('.b-dl').addEventListener('click', e => {
+        e.stopPropagation();
+        const blob = new Blob([raw], { type: 'application/json' });
+        const url  = URL.createObjectURL(blob);
+        const a    = Object.assign(document.createElement('a'), { href: url, download: r.filename.replace(/\.[^/.]+$/, '') + '.json' });
+        a.click(); URL.revokeObjectURL(url);
+      });
+
+    } else {
+      item.innerHTML = `
+        <div class="result-item-header">
+          <div class="ri-filename">${esc(r.filename)}</div>
+          <span class="badge badge-error">Failed</span>
+          <span style="font-size:.8125rem;color:var(--error)">${esc(err.message||'Unknown error')}</span>
+        </div>`;
+    }
+
+    container.appendChild(item);
+  });
+}
+
+/* ══════════════════════════════════════════════════════
+   NAVIGATION EVENT DELEGATION
+══════════════════════════════════════════════════════ */
+function initNavigation() {
+  document.addEventListener('click', e => {
+    const el = e.target.closest('[data-page]');
+    if (el) navigate(el.dataset.page);
+  });
+}
+
+/* ══════════════════════════════════════════════════════
+   INIT
+══════════════════════════════════════════════════════ */
+function init() {
+  initNavigation();
+  initStatusModal();
+  initParseUpload();
+  initBatchUpload();
+  checkHealth();
+  setInterval(checkHealth, 60_000);
+  setInterval(updateLastChecked, 10_000);
+  loadDashboard();
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
