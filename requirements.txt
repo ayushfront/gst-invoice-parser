@@ -6,6 +6,7 @@ Pillow==10.4.0
 pytesseract==0.3.13
 google-generativeai==0.7.2
 python-dotenv==1.0.1
+json-repair==0.60.1
 pdf2image==1.17.0
 
 # Testing

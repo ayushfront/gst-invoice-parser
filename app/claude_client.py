@@ -8,6 +8,8 @@ import os
 import re
 import time
 
+from json_repair import repair_json
+
 import google.generativeai as genai
 from google.api_core import exceptions as google_exceptions
 
@@ -91,15 +93,29 @@ def _build_prompt(extracted_text: str, language: str) -> str:
     )
 
 
-def safe_parse_claude_response(raw: str) -> dict:
-    """Strip markdown fences and parse JSON from Gemini response."""
+def _clean_json(raw: str) -> str:
+    """Fix common model output issues before JSON parsing."""
+    # Strip markdown fences
     raw = re.sub(r"```json|```", "", raw).strip()
+    # Python literals → JSON
+    raw = re.sub(r'\bNone\b', 'null', raw)
+    raw = re.sub(r'\bTrue\b', 'true', raw)
+    raw = re.sub(r'\bFalse\b', 'false', raw)
+    # Trailing commas before } or ]
+    raw = re.sub(r",\s*([}\]])", r"\1", raw)
+    return raw
+
+
+def safe_parse_claude_response(raw: str) -> dict:
+    """Strip markdown, fix common JSON issues, and parse Gemini response."""
+    raw = _clean_json(raw)
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        if match:
-            return json.loads(match.group())
+        # Use json-repair to fix any LLM output quirks (unescaped quotes, newlines, etc.)
+        repaired = repair_json(raw, return_objects=True)
+        if isinstance(repaired, dict):
+            return repaired
         raise ValueError("AI returned unparseable response")
 
 
@@ -114,11 +130,11 @@ def call_claude(extracted_text: str, language: str = "en") -> tuple[dict, int, i
 
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel(
-        "nano-banana-pro-preview",
+        "gemini-2.5-flash",
         generation_config=genai.GenerationConfig(
             response_mime_type="application/json",
             temperature=0.1,
-            max_output_tokens=2048,
+            max_output_tokens=8192,
         ),
     )
     prompt = _build_prompt(extracted_text, language)
@@ -158,5 +174,15 @@ def call_claude(extracted_text: str, language: str = "en") -> tuple[dict, int, i
         input_tokens = getattr(response.usage_metadata, "prompt_token_count", 0) or 0
         output_tokens = getattr(response.usage_metadata, "candidates_token_count", 0) or 0
 
-    parsed = safe_parse_claude_response(result)
+    try:
+        parsed = safe_parse_claude_response(result)
+    except ValueError:
+        logger.warning("JSON parse failed on first attempt — retrying")
+        time.sleep(1)
+        response = _do_call()
+        result = response.text
+        if not result or not result.strip():
+            raise ValueError("EXTRACTION_FAILED|AI returned an empty response|")
+        parsed = safe_parse_claude_response(result)
+
     return parsed, input_tokens, output_tokens
