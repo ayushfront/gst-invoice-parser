@@ -212,6 +212,11 @@ def _check_internal(secret: str | None) -> None:
 
 @app.get("/", include_in_schema=False)
 async def root():
+    return FileResponse(str(_STATIC_DIR / "landing.html"))
+
+
+@app.get("/app", include_in_schema=False)
+async def spa():
     return FileResponse(str(_STATIC_DIR / "index.html"))
 
 
